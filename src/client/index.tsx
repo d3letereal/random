@@ -61,7 +61,7 @@ function Logo({ small }: { small?: boolean }) {
 		<div className={small ? "logo logo-small" : "logo"}>
 			<span className="logo-glyph">文</span>
 			<span className="logo-text">
-				Poly<b>Gloss</b>
+				Lang<b>Guesser</b>
 			</span>
 		</div>
 	);
@@ -156,8 +156,9 @@ function Home({
 
 				<div className="rules-strip">
 					<span><i>10 pts</i> exact language</span>
+					<span><i>+ bonus</i> fastest correct</span>
 					<span><i>3 pts</i> closely related</span>
-					<span><i>0 pts</i> wrong</span>
+					<span><i>all same pick</i> nobody scores</span>
 					<span><i>{MAX_PLAYERS}</i> players max</span>
 				</div>
 			</main>
@@ -244,6 +245,18 @@ function SettingsPanel({
 					<Presets values={[0, 3, 5]} current={settings.pointsRelated} onPick={(n) => onChange({ pointsRelated: n })} />
 				</label>
 				<label>
+					<span>⚡ Fastest-correct bonus</span>
+					<input
+						type="number"
+						min={0}
+						max={50}
+						disabled={!canEdit}
+						value={settings.speedBonus}
+						onChange={(e) => onChange({ speedBonus: Number(e.target.value) })}
+					/>
+					<Presets values={[0, 5, 10]} current={settings.speedBonus} onPick={(n) => onChange({ speedBonus: n })} />
+				</label>
+				<label>
 					<span>🧩 Answer choices</span>
 					<select
 						disabled={!canEdit}
@@ -252,7 +265,10 @@ function SettingsPanel({
 					>
 						<option value={4}>4 — tricky</option>
 						<option value={6}>6 — standard</option>
-						<option value={8}>8 — chaotic</option>
+						<option value={8}>8 — busy</option>
+						<option value={12}>12 — crowded</option>
+						<option value={16}>16 — huge</option>
+						<option value={20}>20 — language buffet</option>
 					</select>
 				</label>
 				<label>
@@ -277,15 +293,6 @@ function SettingsPanel({
 						onChange={(e) => onChange({ includeAncient: e.target.checked })}
 					/>
 					<span>🏛️ Ancient languages <small>Latin, Sanskrit, Old Norse…</small></span>
-				</label>
-				<label className="toggle">
-					<input
-						type="checkbox"
-						disabled={!canEdit}
-						checked={settings.includeFake}
-						onChange={(e) => onChange({ includeFake: e.target.checked })}
-					/>
-					<span>✨ Fake languages <small>Zuthric, Quovax…</small></span>
 				</label>
 			</div>
 			<label className="hint-select">
@@ -466,6 +473,47 @@ function GameScreen({
 	const you = state?.players.find((p) => p.id === myId) ?? null;
 	const isHost = !!you?.isHost;
 
+	// Privacy: discourage screenshots, printing & text copying during play
+	useEffect(() => {
+		const prevent = (e: Event) => e.preventDefault();
+		const onKey = (e: KeyboardEvent) => {
+			const k = e.key.toLowerCase();
+			if ((e.ctrlKey || e.metaKey) && ["p", "s", "u"].includes(k)) e.preventDefault();
+			if (e.key === "PrintScreen") e.preventDefault();
+		};
+		const onKeyUp = (e: KeyboardEvent) => {
+			if (e.key === "PrintScreen") {
+				navigator.clipboard
+					?.writeText("Screenshots are disabled while playing Lang Guesser.")
+					.catch(() => {});
+			}
+		};
+		const blurOn = () => document.body.classList.add("privacy-blur");
+		const blurOff = () => document.body.classList.remove("privacy-blur");
+		const onVis = () => (document.hidden ? blurOn() : blurOff());
+		document.addEventListener("contextmenu", prevent);
+		document.addEventListener("copy", prevent);
+		document.addEventListener("cut", prevent);
+		document.addEventListener("dragstart", prevent);
+		window.addEventListener("keydown", onKey);
+		window.addEventListener("keyup", onKeyUp);
+		window.addEventListener("blur", blurOn);
+		window.addEventListener("focus", blurOff);
+		document.addEventListener("visibilitychange", onVis);
+		return () => {
+			document.removeEventListener("contextmenu", prevent);
+			document.removeEventListener("copy", prevent);
+			document.removeEventListener("cut", prevent);
+			document.removeEventListener("dragstart", prevent);
+			window.removeEventListener("keydown", onKey);
+			window.removeEventListener("keyup", onKeyUp);
+			window.removeEventListener("blur", blurOn);
+			window.removeEventListener("focus", blurOff);
+			document.removeEventListener("visibilitychange", onVis);
+			blurOff();
+		};
+	}, []);
+
 	const copyCode = () => {
 		const url = `${location.origin}/?room=${state?.roomCode ?? room}`;
 		navigator.clipboard?.writeText(url).then(
@@ -583,8 +631,11 @@ function LobbyView({
 
 				<div className="scoring-note">
 					<span className="pill pill-good">{state.settings.pointsExact} exact</span>
+					{state.settings.speedBonus > 0 && (
+						<span className="pill pill-good">⚡ +{state.settings.speedBonus} fastest</span>
+					)}
 					<span className="pill pill-mid">{state.settings.pointsRelated} related language</span>
-					<span className="pill pill-bad">0 wrong</span>
+					<span className="pill pill-bad">unanimous pick = 0</span>
 				</div>
 			</section>
 
@@ -733,7 +784,7 @@ function RoundView({
 					<ObfText text={state.obfuscatedText} />
 				</section>
 
-				<div className="choices-grid">
+				<div className={`choices-grid ${state.choices.length > 8 ? "big" : ""}`}>
 					{state.choices.map((c, i) => (
 						<button
 							key={c.id}
@@ -771,6 +822,11 @@ function RoundView({
 			{winner && (
 				<div className="winner-banner">
 					🏆 <b>{winner.name}</b> wins the match!
+				</div>
+			)}
+			{r?.unanimous && (
+				<div className="winner-banner unanimous-banner">
+					🤝 Everyone picked the same — <b>no points</b> this round!
 				</div>
 			)}
 			<ScoreStrip state={state} myId={myId} />
@@ -816,6 +872,7 @@ function RoundView({
 									<span className={`res-points ${
 										exact ? "pts-good" : related ? "pts-mid" : "pts-bad"
 									}`}>
+										{exact && r.fastestId === p.id && state.settings.speedBonus > 0 ? "⚡ " : ""}
 										{p.lastGain === null ? "—" : `+${p.lastGain}`}
 									</span>
 								</li>

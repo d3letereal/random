@@ -4,7 +4,6 @@ import type { Connection, ConnectionContext } from "partyserver";
 import {
 	ALL_LANGS,
 	PHRASEBOOKS,
-	fakeTranslate,
 	groupOf,
 	langById,
 	obfuscate,
@@ -34,6 +33,7 @@ type Player = {
 	score: number;
 	isHost: boolean;
 	guess: string | null;
+	guessedAt: number | null;
 	lastGain: number | null;
 	connected: boolean;
 };
@@ -47,6 +47,8 @@ type Round = {
 	choices: ChoiceOption[];
 	deadline: number;
 	token: number;
+	fastestId: string | null; // first correct guesser
+	unanimous: boolean; // everyone answered identically → nobody scores
 };
 
 const ROOM_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
@@ -80,6 +82,7 @@ export class Globe extends Server {
 	roundNumber = 0;
 	currentRound: Round | null = null;
 	usedSentences = new Set<number>();
+	recentLangIds: string[] = []; // avoid repeating recent languages
 	private token = 0;
 	private timer: ReturnType<typeof setTimeout> | null = null;
 	private roomCode = "?????";
@@ -90,7 +93,6 @@ export class Globe extends Server {
 		return ALL_LANGS.filter((l) => {
 			if (l.category === "modern") return true;
 			if (l.category === "ancient") return this.settings.includeAncient;
-			if (l.category === "fake") return this.settings.includeFake;
 			return false;
 		});
 	}
@@ -153,6 +155,8 @@ export class Globe extends Server {
 					nativeName: lang.native,
 					country: lang.country,
 					wasPhrasebook: round.wasPhrasebook,
+					fastestId: round.fastestId,
+					unanimous: round.unanimous,
 				};
 			}
 		}
@@ -247,6 +251,7 @@ export class Globe extends Server {
 						p.score = 0;
 						p.guess = null;
 						p.lastGain = null;
+				p.guessedAt = null;
 					}
 					this.usedSentences.clear();
 					this.sync();
@@ -261,6 +266,7 @@ export class Globe extends Server {
 						p.score = 0;
 						p.guess = null;
 						p.lastGain = null;
+				p.guessedAt = null;
 					}
 					this.usedSentences.clear();
 					this.sync();
@@ -338,6 +344,7 @@ export class Globe extends Server {
 			isHost: isFirst,
 			guess: null,
 			lastGain: null,
+			guessedAt: null,
 			connected: true,
 		};
 		this.players.set(player.id, player);
@@ -364,7 +371,8 @@ export class Globe extends Server {
 		const stillBound = [...this.connToPlayer.values()].includes(pid);
 		if (!stillBound) {
 			player.connected = false;
-			player.guess = null; // never leave ghost locks in
+			player.guess = null;
+			player.guessedAt = null; // never leave ghost locks in
 
 			// Host migration
 			if (player.isHost && !stillBound) {
@@ -398,14 +406,15 @@ export class Globe extends Server {
 		if (partial.roundSeconds !== undefined)
 			s.roundSeconds = clamp(partial.roundSeconds, 10, 300, s.roundSeconds);
 		if (partial.choiceCount !== undefined)
-			s.choiceCount = clamp(partial.choiceCount, 4, 8, s.choiceCount);
+			s.choiceCount = clamp(partial.choiceCount, 4, 20, s.choiceCount);
 		if (partial.pointsExact !== undefined)
 			s.pointsExact = clamp(partial.pointsExact, 1, 50, s.pointsExact);
 		if (partial.pointsRelated !== undefined)
 			s.pointsRelated = clamp(partial.pointsRelated, 0, Math.max(0, s.pointsExact - 1), s.pointsRelated);
+		if (partial.speedBonus !== undefined)
+			s.speedBonus = clamp(partial.speedBonus, 0, 50, s.speedBonus);
 		if (partial.autoNextSeconds !== undefined)
 			s.autoNextSeconds = clamp(partial.autoNextSeconds, 0, 120, s.autoNextSeconds);
-		if (typeof partial.includeFake === "boolean") s.includeFake = partial.includeFake;
 		if (typeof partial.includeAncient === "boolean")
 			s.includeAncient = partial.includeAncient;
 		if (partial.hintMode && HINT_MODES.includes(partial.hintMode))
@@ -489,15 +498,12 @@ export class Globe extends Server {
 		let chosenId: string | null = null;
 		let wasPhrasebook = false;
 
+		// Prefer languages that haven't come up recently
+		const fresh = pool.filter((l) => !this.recentLangIds.includes(l.id));
+		const rollPool = fresh.length > 0 ? fresh : pool;
+
 		for (let attempt = 0; attempt < 4; attempt++) {
-			const lang = randomOf(pool);
-			if (lang.category === "fake") {
-				chosenId = lang.id;
-				translation = fakeTranslate(lang.id, sentenceEn);
-				wasPhrasebook = false;
-				sentence = sentenceEn;
-				break;
-			}
+			const lang = randomOf(rollPool);
 			if (lang.category === "ancient") {
 				if (lang.code) {
 					translation = await translateText(sentenceEn, lang.code);
@@ -534,7 +540,7 @@ export class Globe extends Server {
 		if (myToken !== this.token) return; // superseded by a newer request
 
 		// Offline safety net: live translation failed entirely — use an ancient
-		// phrasebook round if available, then a fake-language round, else give up.
+		// phrasebook round if one is enabled, else give up gracefully.
 		if (!chosenId || translation === null) {
 			const bookLangs = pool.filter((l) => l.category === "ancient" && PHRASEBOOKS[l.id]?.length);
 			if (bookLangs.length > 0) {
@@ -545,15 +551,6 @@ export class Globe extends Server {
 				translation = phrase.text;
 				wasPhrasebook = true;
 				console.warn("[polygloss] offline fallback → phrasebook round");
-			} else {
-				const fakes = pool.filter((l) => l.category === "fake");
-				if (fakes.length > 0) {
-					const lang = randomOf(fakes);
-					chosenId = lang.id;
-					sentence = sentenceEn;
-					translation = fakeTranslate(lang.id, sentenceEn);
-					console.warn("[polygloss] offline fallback → fake round");
-				}
 			}
 		}
 
@@ -567,11 +564,15 @@ export class Globe extends Server {
 		}
 
 		this.usedSentences.add(sentenceIndex);
+		this.recentLangIds.push(chosenId);
+		if (this.recentLangIds.length > 15) this.recentLangIds.shift();
 		this.roundNumber++;
 		this.phase = "guessing";
 		for (const p of this.players.values()) {
 			p.guess = null;
 			p.lastGain = null;
+				p.guessedAt = null;
+			p.guessedAt = null;
 		}
 
 		const deadline = Date.now() + this.settings.roundSeconds * 1000;
@@ -584,6 +585,8 @@ export class Globe extends Server {
 			choices: this.buildChoices(chosenId, poolIds),
 			deadline,
 			token: myToken,
+			fastestId: null,
+			unanimous: false,
 		};
 		this.sync();
 
@@ -598,6 +601,7 @@ export class Globe extends Server {
 		if (!player || player.guess !== null) return;
 		if (!this.currentRound.choices.some((c) => c.id === choiceId)) return;
 		player.guess = choiceId;
+		player.guessedAt = Date.now();
 		this.sync();
 		if (this.allGuessed()) this.finishRound();
 	}
@@ -609,14 +613,33 @@ export class Globe extends Server {
 
 		const correctId = this.currentRound.langId;
 		const correctGroup = groupOf(correctId);
+		const round = this.currentRound;
+
+		const answered = [...this.players.values()].filter((p) => p.guess !== null);
+
+		// Unanimity rule: if two or more players answered and everyone picked
+		// the same option, nobody scores the round.
+		const unanimous =
+			answered.length >= 2 && new Set(answered.map((p) => p.guess)).size === 1;
+
+		let fastestId: string | null = null;
+		if (!unanimous) {
+			const exactGuessers = answered
+				.filter((p) => p.guess === correctId)
+				.sort((a, b) => (a.guessedAt ?? Infinity) - (b.guessedAt ?? Infinity));
+			fastestId = exactGuessers[0]?.id ?? null;
+		}
+		round.fastestId = fastestId;
+		round.unanimous = unanimous;
 
 		for (const p of this.players.values()) {
-			if (p.guess === null) {
-				p.lastGain = null;
+			if (p.guess === null || unanimous) {
+				p.lastGain = p.guess === null ? null : 0;
 				continue;
 			}
 			if (p.guess === correctId) {
 				p.lastGain = this.settings.pointsExact;
+				if (p.id === fastestId) p.lastGain += this.settings.speedBonus;
 			} else if (groupOf(p.guess) === correctGroup) {
 				p.lastGain = this.settings.pointsRelated;
 			} else {

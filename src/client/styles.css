@@ -699,3 +699,49 @@ b { color: #fff; }
 }
 
 a { color: var(--accent-2); }
+
+/* ---------------------------------------------------------------- anti-copy */
+
+.game-wrap, .home-wrap {
+	-webkit-user-select: none;
+	user-select: none;
+}
+input, textarea, select {
+	-webkit-user-select: text;
+	user-select: text;
+}
+
+.privacy-blur .round,
+.privacy-blur .lobby,
+.privacy-blur .home-card {
+	filter: blur(14px);
+	transition: filter 0.15s ease;
+	pointer-events: none;
+}
+.round, .lobby, .home-card { transition: filter 0.15s ease; }
+
+.unanimous-banner {
+	background: linear-gradient(135deg, rgba(139, 147, 167, 0.16), rgba(139, 147, 167, 0.08));
+	border-color: rgba(139, 147, 167, 0.45);
+	font-size: 1.05rem;
+}
+
+/* ---------------------------------------------------------------- big choice pools */
+
+.choices-grid.big {
+	grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+	gap: 0.55rem;
+}
+.choices-grid.big .choice {
+	flex-direction: row;
+	justify-content: flex-start;
+	text-align: left;
+	padding: 0.55rem 0.65rem;
+	gap: 0.6rem;
+}
+.choices-grid.big .choice-flag { font-size: 1.25rem; }
+.choices-grid.big .choice-label { font-size: 0.85rem; }
+.choices-grid.big .choice-sub { display: none; }
+@media (max-width: 560px) {
+	.choices-grid.big { grid-template-columns: repeat(2, 1fr); }
+}

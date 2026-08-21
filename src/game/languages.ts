@@ -6,13 +6,13 @@ export type LangDef = {
 	native: string; // endonym
 	flag: string;
 	country: string;
-	group: string; // relatedness group — same group = "closely related" = 3 pts
+	group: string; // relatedness group — same group = "closely related"
 	category: LangCategory;
-	code?: string; // translation API code (modern + some ancient)
+	code?: string; // translation API code
 };
 
 // ---------------------------------------------------------------------------
-// Modern languages
+// Modern languages (~105)
 // ---------------------------------------------------------------------------
 
 const MODERN: LangDef[] = [
@@ -23,13 +23,18 @@ const MODERN: LangDef[] = [
 	{ id: "ro", name: "Romanian", native: "Română", flag: "🇷🇴", country: "Romania", group: "romance", category: "modern", code: "ro" },
 	{ id: "ca", name: "Catalan", native: "Català", flag: "🇦🇩", country: "Andorra", group: "romance", category: "modern", code: "ca" },
 	{ id: "gl", name: "Galician", native: "Galego", flag: "🇪🇸", country: "Spain", group: "romance", category: "modern", code: "gl" },
+	{ id: "ht", name: "Haitian Creole", native: "Kreyòl Ayisyen", flag: "🇭🇹", country: "Haiti", group: "creole", category: "modern", code: "ht" },
 	{ id: "de", name: "German", native: "Deutsch", flag: "🇩🇪", country: "Germany", group: "gm-west", category: "modern", code: "de" },
 	{ id: "nl", name: "Dutch", native: "Nederlands", flag: "🇳🇱", country: "Netherlands", group: "gm-west", category: "modern", code: "nl" },
 	{ id: "af", name: "Afrikaans", native: "Afrikaans", flag: "🇿🇦", country: "South Africa", group: "gm-west", category: "modern", code: "af" },
+	{ id: "lb", name: "Luxembourgish", native: "Lëtzebuergesch", flag: "🇱🇺", country: "Luxembourg", group: "gm-west", category: "modern", code: "lb" },
+	{ id: "fy", name: "Frisian", native: "Frysk", flag: "🇳🇱", country: "Netherlands", group: "gm-west", category: "modern", code: "fy" },
+	{ id: "yi", name: "Yiddish", native: "ייִדיש", flag: "✡️", country: "Ashkenazi diaspora", group: "gm-west", category: "modern", code: "yi" },
 	{ id: "sv", name: "Swedish", native: "Svenska", flag: "🇸🇪", country: "Sweden", group: "gm-north", category: "modern", code: "sv" },
 	{ id: "no", name: "Norwegian", native: "Norsk", flag: "🇳🇴", country: "Norway", group: "gm-north", category: "modern", code: "no" },
 	{ id: "da", name: "Danish", native: "Dansk", flag: "🇩🇰", country: "Denmark", group: "gm-north", category: "modern", code: "da" },
 	{ id: "is", name: "Icelandic", native: "Íslenska", flag: "🇮🇸", country: "Iceland", group: "gm-north", category: "modern", code: "is" },
+	{ id: "fo", name: "Faroese", native: "Føroyskt", flag: "🇫🇴", country: "Faroe Islands", group: "gm-north", category: "modern", code: "fo" },
 	{ id: "fi", name: "Finnish", native: "Suomi", flag: "🇫🇮", country: "Finland", group: "uralic", category: "modern", code: "fi" },
 	{ id: "hu", name: "Hungarian", native: "Magyar", flag: "🇭🇺", country: "Hungary", group: "uralic", category: "modern", code: "hu" },
 	{ id: "et", name: "Estonian", native: "Eesti", flag: "🇪🇪", country: "Estonia", group: "uralic", category: "modern", code: "et" },
@@ -42,6 +47,7 @@ const MODERN: LangDef[] = [
 	{ id: "bg", name: "Bulgarian", native: "Български", flag: "🇧🇬", country: "Bulgaria", group: "slv-south", category: "modern", code: "bg" },
 	{ id: "sr", name: "Serbian", native: "Српски", flag: "🇷🇸", country: "Serbia", group: "slv-south", category: "modern", code: "sr" },
 	{ id: "hr", name: "Croatian", native: "Hrvatski", flag: "🇭🇷", country: "Croatia", group: "slv-south", category: "modern", code: "hr" },
+	{ id: "bs", name: "Bosnian", native: "Bosanski", flag: "🇧🇦", country: "Bosnia", group: "slv-south", category: "modern", code: "bs" },
 	{ id: "sl", name: "Slovenian", native: "Slovenščina", flag: "🇸🇮", country: "Slovenia", group: "slv-south", category: "modern", code: "sl" },
 	{ id: "mk", name: "Macedonian", native: "Македонски", flag: "🇲🇰", country: "North Macedonia", group: "slv-south", category: "modern", code: "mk" },
 	{ id: "lv", name: "Latvian", native: "Latviešu", flag: "🇱🇻", country: "Latvia", group: "baltic", category: "modern", code: "lv" },
@@ -56,14 +62,22 @@ const MODERN: LangDef[] = [
 	{ id: "ar", name: "Arabic", native: "العربية", flag: "🇪🇬", country: "Egypt", group: "semitic", category: "modern", code: "ar" },
 	{ id: "he", name: "Hebrew", native: "עברית", flag: "🇮🇱", country: "Israel", group: "semitic", category: "modern", code: "he" },
 	{ id: "am", name: "Amharic", native: "አማርኛ", flag: "🇪🇹", country: "Ethiopia", group: "semitic", category: "modern", code: "am" },
+	{ id: "ti", name: "Tigrinya", native: "ትግርኛ", flag: "🇪🇷", country: "Eritrea", group: "semitic", category: "modern", code: "ti" },
 	{ id: "mt", name: "Maltese", native: "Malti", flag: "🇲🇹", country: "Malta", group: "semitic", category: "modern", code: "mt" },
 	{ id: "fa", name: "Persian", native: "فارسی", flag: "🇮🇷", country: "Iran", group: "iranian", category: "modern", code: "fa" },
 	{ id: "ku", name: "Kurdish", native: "کوردی", flag: "🇮🇶", country: "Iraq", group: "iranian", category: "modern", code: "ku" },
+	{ id: "ps", name: "Pashto", native: "پښتو", flag: "🇦🇫", country: "Afghanistan", group: "iranian", category: "modern", code: "ps" },
 	{ id: "hi", name: "Hindi", native: "हिन्दी", flag: "🇮🇳", country: "India", group: "indo-aryan", category: "modern", code: "hi" },
 	{ id: "bn", name: "Bengali", native: "বাংলা", flag: "🇧🇩", country: "Bangladesh", group: "indo-aryan", category: "modern", code: "bn" },
 	{ id: "ur", name: "Urdu", native: "اردو", flag: "🇵🇰", country: "Pakistan", group: "indo-aryan", category: "modern", code: "ur" },
 	{ id: "ne", name: "Nepali", native: "नेपाली", flag: "🇳🇵", country: "Nepal", group: "indo-aryan", category: "modern", code: "ne" },
 	{ id: "si", name: "Sinhala", native: "සිංහල", flag: "🇱🇰", country: "Sri Lanka", group: "indo-aryan", category: "modern", code: "si" },
+	{ id: "pa", name: "Punjabi", native: "ਪੰਜਾਬੀ", flag: "🇮🇳", country: "India", group: "indo-aryan", category: "modern", code: "pa" },
+	{ id: "gu", name: "Gujarati", native: "ગુજરાતી", flag: "🇮🇳", country: "India", group: "indo-aryan", category: "modern", code: "gu" },
+	{ id: "mr", name: "Marathi", native: "मराठी", flag: "🇮🇳", country: "India", group: "indo-aryan", category: "modern", code: "mr" },
+	{ id: "or", name: "Odia", native: "ଓଡ଼ିଆ", flag: "🇮🇳", country: "India", group: "indo-aryan", category: "modern", code: "or" },
+	{ id: "as", name: "Assamese", native: "অসমীয়া", flag: "🇮🇳", country: "India", group: "indo-aryan", category: "modern", code: "as" },
+	{ id: "sd", name: "Sindhi", native: "سنڌي", flag: "🇵🇰", country: "Pakistan", group: "indo-aryan", category: "modern", code: "sd" },
 	{ id: "ta", name: "Tamil", native: "தமிழ்", flag: "🇮🇳", country: "India", group: "dravidian", category: "modern", code: "ta" },
 	{ id: "te", name: "Telugu", native: "తెలుగు", flag: "🇮🇳", country: "India", group: "dravidian", category: "modern", code: "te" },
 	{ id: "kn", name: "Kannada", native: "ಕನ್ನಡ", flag: "🇮🇳", country: "India", group: "dravidian", category: "modern", code: "kn" },
@@ -76,7 +90,14 @@ const MODERN: LangDef[] = [
 	{ id: "id", name: "Indonesian", native: "Bahasa Indonesia", flag: "🇮🇩", country: "Indonesia", group: "austronesian", category: "modern", code: "id" },
 	{ id: "ms", name: "Malay", native: "Bahasa Melayu", flag: "🇲🇾", country: "Malaysia", group: "austronesian", category: "modern", code: "ms" },
 	{ id: "tl", name: "Filipino", native: "Filipino", flag: "🇵🇭", country: "Philippines", group: "austronesian", category: "modern", code: "tl" },
+	{ id: "ceb", name: "Cebuano", native: "Sinugbuanon", flag: "🇵🇭", country: "Philippines", group: "austronesian", category: "modern", code: "ceb" },
+	{ id: "jv", name: "Javanese", native: "Basa Jawa", flag: "🇮🇩", country: "Indonesia", group: "austronesian", category: "modern", code: "jv" },
+	{ id: "su", name: "Sundanese", native: "Basa Sunda", flag: "🇮🇩", country: "Indonesia", group: "austronesian", category: "modern", code: "su" },
+	{ id: "mg", name: "Malagasy", native: "Malagasy", flag: "🇲🇬", country: "Madagascar", group: "austronesian", category: "modern", code: "mg" },
 	{ id: "mi", name: "Maori", native: "Te Reo Māori", flag: "🇳🇿", country: "New Zealand", group: "austronesian", category: "modern", code: "mi" },
+	{ id: "sm", name: "Samoan", native: "Gagana Samoa", flag: "🇼🇸", country: "Samoa", group: "austronesian", category: "modern", code: "sm" },
+	{ id: "to", name: "Tongan", native: "Lea Faka-Tonga", flag: "🇹🇴", country: "Tonga", group: "austronesian", category: "modern", code: "to" },
+	{ id: "fj", name: "Fijian", native: "Na Vosa Vakaviti", flag: "🇫🇯", country: "Fiji", group: "austronesian", category: "modern", code: "fj" },
 	{ id: "haw", name: "Hawaiian", native: "ʻŌlelo Hawaiʻi", flag: "🌺", country: "Hawaii", group: "austronesian", category: "modern", code: "haw" },
 	{ id: "zh", name: "Chinese", native: "中文", flag: "🇨🇳", country: "China", group: "sinitic", category: "modern", code: "zh-CN" },
 	{ id: "ja", name: "Japanese", native: "日本語", flag: "🇯🇵", country: "Japan", group: "japonic", category: "modern", code: "ja" },
@@ -87,9 +108,18 @@ const MODERN: LangDef[] = [
 	{ id: "sq", name: "Albanian", native: "Shqip", flag: "🇦🇱", country: "Albania", group: "albanian", category: "modern", code: "sq" },
 	{ id: "sw", name: "Swahili", native: "Kiswahili", flag: "🇰🇪", country: "Kenya", group: "bantu", category: "modern", code: "sw" },
 	{ id: "zu", name: "Zulu", native: "isiZulu", flag: "🇿🇦", country: "South Africa", group: "bantu", category: "modern", code: "zu" },
+	{ id: "xh", name: "Xhosa", native: "isiXhosa", flag: "🇿🇦", country: "South Africa", group: "bantu", category: "modern", code: "xh" },
+	{ id: "st", name: "Sesotho", native: "Sesotho", flag: "🇱🇸", country: "Lesotho", group: "bantu", category: "modern", code: "st" },
+	{ id: "sn", name: "Shona", native: "ChiShona", flag: "🇿🇼", country: "Zimbabwe", group: "bantu", category: "modern", code: "sn" },
 	{ id: "ha", name: "Hausa", native: "Hausa", flag: "🇳🇬", country: "Nigeria", group: "chadic", category: "modern", code: "ha" },
 	{ id: "yo", name: "Yoruba", native: "Yorùbá", flag: "🇳🇬", country: "Nigeria", group: "yoruboid", category: "modern", code: "yo" },
-	{ id: "eu", name: "Basque", native: "Euskara", flag: "🪨", country: "Pyrenees", group: "isolate-eu", category: "modern", code: "eu" },
+	{ id: "ig", name: "Igbo", native: "Igbo", flag: "🇳🇬", country: "Nigeria", group: "igbo", category: "modern", code: "ig" },
+	{ id: "so", name: "Somali", native: "Soomaali", flag: "🇸🇴", country: "Somalia", group: "cushitic", category: "modern", code: "so" },
+	{ id: "qu", name: "Quechua", native: "Runasimi", flag: "🇵🇪", country: "Peru", group: "quechua", category: "modern", code: "qu" },
+	{ id: "ay", name: "Aymara", native: "Aymar aru", flag: "🇧🇴", country: "Bolivia", group: "aymaran", category: "modern", code: "ay" },
+	{ id: "gn", name: "Guarani", native: "Avañe'ẽ", flag: "🇵🇾", country: "Paraguay", group: "tupi", category: "modern", code: "gn" },
+	{ id: "kl", name: "Greenlandic", native: "Kalaallisut", flag: "🇬🇱", country: "Greenland", group: "eskimo", category: "modern", code: "kl" },
+	{ id: "eo", name: "Esperanto", native: "Esperanto", flag: "🌐", country: "Constructed", group: "constructed", category: "modern", code: "eo" },
 ];
 
 // ---------------------------------------------------------------------------
@@ -167,70 +197,9 @@ export const PHRASEBOOKS: Record<string, Phrase[]> = {
 	],
 };
 
-// ---------------------------------------------------------------------------
-// Fake languages (procedurally generated gibberish with distinct flavors)
-// ---------------------------------------------------------------------------
-
-export type FakeLangDef = LangDef & {
-	syllables: string[];
-	endings: string[];
-};
-
-const FAKE: FakeLangDef[] = [
-	{
-		id: "velmoran", name: "Velmoran", native: "Velmoreth", flag: "🪐", country: "Velmora Prime",
-		group: "fake-velmar", category: "fake",
-		syllables: ["vel", "ora", "miel", "tha", "lun", "ser", "avi", "elo"],
-		endings: ["ra", "nie", "los", "tha", "mir", "en"],
-	},
-	{
-		id: "kavanni", name: "Kavanni", native: "Kavannia", flag: "🦋", country: "Kavath Isle",
-		group: "fake-velmar", category: "fake",
-		syllables: ["ka", "van", "ni", "sol", "te", "mar", "ilu", "ren"],
-		endings: ["ni", "ka", "sel", "ta", "vin", "lo"],
-	},
-	{
-		id: "mirreni", name: "Mirreni", native: "Mirrenil", flag: "🌙", country: "Mirren Delta",
-		group: "fake-velmar", category: "fake",
-		syllables: ["mi", "rre", "na", "sel", "vi", "lo", "the", "enna"],
-		endings: ["ni", "ssa", "rel", "mo", "ne", "li"],
-	},
-	{
-		id: "zuthric", name: "Zuthric", native: "Zuthrik", flag: "⚙️", country: "Zuthkar Republic",
-		group: "fake-zuth", category: "fake",
-		syllables: ["zuth", "rak", "vo", "grim", "kesh", "dro", "ul", "mak"],
-		endings: ["ik", "or", "ath", "ek", "uz", "rim"],
-	},
-	{
-		id: "brakthar", name: "Brak'thar", native: "Brak'thari", flag: "🔥", country: "Brak'thar Wastes",
-		group: "fake-zuth", category: "fake",
-		syllables: ["brak", "thu", "gar", "zim", "rok", "ash", "dul", "kor"],
-		endings: ["'tar", "akh", "ug", "rim", "oth", "zak"],
-	},
-	{
-		id: "ondulese", name: "Ondulese", native: "Ondulès", flag: "🌊", country: "Ondu Atoll",
-		group: "fake-ondu", category: "fake",
-		syllables: ["on", "du", "le", "mar", "so", "ti", "ela", "nu"],
-		endings: ["se", "lo", "re", "nth", "da", "is"],
-	},
-	{
-		id: "yeshari", name: "Yeshari", native: "Yesharin", flag: "👁️", country: "Yeshar Steppe",
-		group: "fake-yesh", category: "fake",
-		syllables: ["ye", "sha", "ri", "ko", "nam", "ta", "su", "ren"],
-		endings: ["ari", "esh", "un", "ka", "ir", "osh"],
-	},
-	{
-		id: "quovax", name: "Quovax", native: "Quovaxi", flag: "🐉", country: "Quovax Basin",
-		group: "fake-quov", category: "fake",
-		syllables: ["quo", "vax", "zi", "mor", "peb", "lu", "kaw", "ex"],
-		endings: ["ax", "ix", "ox", "eth", "ux", "ar"],
-	},
-];
-
-export const ALL_LANGS: LangDef[] = [...MODERN, ...ANCIENT, ...FAKE];
+export const ALL_LANGS: LangDef[] = [...MODERN, ...ANCIENT];
 
 const LANG_MAP = new Map(ALL_LANGS.map((l) => [l.id, l]));
-const FAKE_MAP = new Map(FAKE.map((l) => [l.id, l]));
 
 export function langById(id: string): LangDef | undefined {
 	return LANG_MAP.get(id);
@@ -238,42 +207,6 @@ export function langById(id: string): LangDef | undefined {
 
 export function groupOf(id: string): string | undefined {
 	return LANG_MAP.get(id)?.group;
-}
-
-// ---------------------------------------------------------------------------
-// Fake translation — deterministic per (language, word)
-// ---------------------------------------------------------------------------
-
-function hashStr(s: string): number {
-	let h = 2166136261;
-	for (let i = 0; i < s.length; i++) {
-		h ^= s.charCodeAt(i);
-		h = Math.imul(h, 16777619);
-	}
-	return h >>> 0;
-}
-
-export function fakeTranslate(langId: string, sentence: string): string {
-	const def = FAKE_MAP.get(langId);
-	if (!def) return sentence;
-	return sentence
-		.split(/(\s+)/)
-		.map((part) => {
-			if (/^\s+$/.test(part)) return part;
-			const m = part.match(/^(\W*)(.*?)(\W*)$/s);
-			if (!m || !m[2]) return part;
-			const [, pre, core, post] = m;
-			const h = hashStr(def.id + ":" + core.toLowerCase());
-			const sylCount = core.length <= 3 ? 2 : ((h >>> 3) % 2) + 2;
-			let w = "";
-			for (let i = 0; i < sylCount; i++) {
-				w += def.syllables[(h >>> (i * 4)) % def.syllables.length];
-			}
-			w += def.endings[(h >>> 9) % def.endings.length];
-			if (/^[A-Z]/.test(core)) w = w.charAt(0).toUpperCase() + w.slice(1);
-			return pre + w + post;
-		})
-		.join("");
 }
 
 // ---------------------------------------------------------------------------
@@ -309,9 +242,8 @@ export async function translateText(text: string, targetCode: string): Promise<s
 
 	// Fallback: MyMemory
 	try {
-		const pair = targetCode === "zh-CN" ? "zh-CN" : targetCode;
 		const url =
-			`https://api.mymemory.translated.net/get?q=${encodeURIComponent(text)}&langpair=en|${encodeURIComponent(pair)}`;
+			`https://api.mymemory.translated.net/get?q=${encodeURIComponent(text)}&langpair=en|${encodeURIComponent(targetCode)}`;
 		const data = (await fetchJson(url)) as { responseData?: { translatedText?: string } };
 		const t = data?.responseData?.translatedText;
 		if (typeof t === "string" && t.trim() && !t.includes("MYMEMORY WARNING") && !t.includes("QUERY LENGTH LIMIT")) {
@@ -331,13 +263,17 @@ export async function translateText(text: string, targetCode: string): Promise<s
 
 export function obfuscate(text: string, mode: HintMode): string {
 	if (mode === "full") return text;
-	const step = mode === "half" ? 2 : 3;
+	const step = mode === "half" ? 2 : mode === "first" ? 99 : 3;
 	let out = "";
 	let letterIdx = 0;
 	for (const ch of text) {
 		if (/[\p{L}\p{M}]/u.test(ch)) {
 			letterIdx++;
-			out += letterIdx % step === 0 ? ch : "·";
+			if (mode === "first") {
+				out += letterIdx === 1 ? ch : "·";
+			} else {
+				out += letterIdx % step === 0 ? ch : "·";
+			}
 		} else {
 			out += ch;
 			if (/\s/.test(ch)) letterIdx = 0;

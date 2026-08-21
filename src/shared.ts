@@ -7,24 +7,24 @@ export type HintMode = "third" | "half" | "first" | "full";
 export type GameSettings = {
 	targetScore: number; // first player to reach this wins
 	roundSeconds: number; // time per round
-	includeFake: boolean;
 	includeAncient: boolean;
 	hintMode: HintMode;
-	choiceCount: number; // answer buttons per round (4–8)
+	choiceCount: number; // answer buttons per round (4–20)
 	pointsExact: number; // points for the exact language
 	pointsRelated: number; // points for a closely related language
+	speedBonus: number; // extra points for the fastest correct guess
 	autoNextSeconds: number; // 0 = host advances manually
 };
 
 export const DEFAULT_SETTINGS: GameSettings = {
 	targetScore: 50,
 	roundSeconds: 45,
-	includeFake: false,
 	includeAncient: true,
-	hintMode: "third",
+	hintMode: "full",
 	choiceCount: 6,
 	pointsExact: 10,
 	pointsRelated: 3,
+	speedBonus: 5,
 	autoNextSeconds: 12,
 };
 
@@ -77,6 +77,8 @@ export type PublicState = {
 		nativeName: string;
 		country: string;
 		wasPhrasebook: boolean;
+		fastestId: string | null; // first correct guesser (gets the speed bonus)
+		unanimous: boolean; // everyone picked identically → no points
 	} | null;
 
 	winner: { id: string; name: string; score: number } | null;
