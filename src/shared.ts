@@ -2,30 +2,34 @@
 
 export type LangCategory = "modern" | "ancient" | "fake";
 
-export type HintMode = "third" | "half" | "first" | "full";
+export type HintMode = "full" | "some" | "most";
 
 export type GameSettings = {
 	targetScore: number; // first player to reach this wins
 	roundSeconds: number; // time per round
 	includeAncient: boolean;
+	includeFake: boolean;
 	hintMode: HintMode;
 	choiceCount: number; // answer buttons per round (4–20)
 	pointsExact: number; // points for the exact language
 	pointsRelated: number; // points for a closely related language
 	speedBonus: number; // extra points for the fastest correct guess
 	autoNextSeconds: number; // 0 = host advances manually
+	earlyReveal: boolean; // end the round as soon as everyone answered
 };
 
 export const DEFAULT_SETTINGS: GameSettings = {
 	targetScore: 50,
 	roundSeconds: 45,
 	includeAncient: true,
+	includeFake: false,
 	hintMode: "full",
 	choiceCount: 6,
 	pointsExact: 10,
 	pointsRelated: 3,
 	speedBonus: 5,
 	autoNextSeconds: 12,
+	earlyReveal: false,
 };
 
 export type PublicPlayer = {
@@ -92,7 +96,10 @@ export type IncomingMessage =
 	| { type: "guess"; choiceId: string }
 	| { type: "next-round" }
 	| { type: "end-match" }
-	| { type: "play-again" };
+	| { type: "play-again" }
+	| { type: "reveal-now" }
+	| { type: "kick"; playerId: string }
+	| { type: "ping" };
 
 export type OutgoingMessage =
 	| { type: "state"; state: PublicState }

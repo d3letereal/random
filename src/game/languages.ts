@@ -120,6 +120,33 @@ const MODERN: LangDef[] = [
 	{ id: "gn", name: "Guarani", native: "Avañe'ẽ", flag: "🇵🇾", country: "Paraguay", group: "tupi", category: "modern", code: "gn" },
 	{ id: "kl", name: "Greenlandic", native: "Kalaallisut", flag: "🇬🇱", country: "Greenland", group: "eskimo", category: "modern", code: "kl" },
 	{ id: "eo", name: "Esperanto", native: "Esperanto", flag: "🌐", country: "Constructed", group: "constructed", category: "modern", code: "eo" },
+	{ id: "co", name: "Corsican", native: "Corsu", flag: "🇫🇷", country: "Corsica", group: "romance", category: "modern", code: "co" },
+	{ id: "sc", name: "Sardinian", native: "Sardu", flag: "🇮🇹", country: "Sardinia", group: "romance", category: "modern", code: "sc" },
+	{ id: "rm", name: "Romansh", native: "Rumantsch", flag: "🇨🇭", country: "Switzerland", group: "romance", category: "modern", code: "rm" },
+	{ id: "gd", name: "Scottish Gaelic", native: "Gàidhlig", flag: "🏴󠁧󠁢󠁳󠁣󠁴󠁿", country: "Scotland", group: "celtic", category: "modern", code: "gd" },
+	{ id: "br", name: "Breton", native: "Brezhoneg", flag: "🇫🇷", country: "Brittany", group: "celtic", category: "modern", code: "br" },
+	{ id: "ky", name: "Kyrgyz", native: "Кыргызча", flag: "🇰🇬", country: "Kyrgyzstan", group: "turkic", category: "modern", code: "ky" },
+	{ id: "tk", name: "Turkmen", native: "Türkmençe", flag: "🇹🇲", country: "Turkmenistan", group: "turkic", category: "modern", code: "tk" },
+	{ id: "ug", name: "Uyghur", native: "ئۇيغۇرچە", flag: "🏜️", country: "Xinjiang", group: "turkic", category: "modern", code: "ug" },
+	{ id: "tt", name: "Tatar", native: "Татарча", flag: "🕌", country: "Tatarstan", group: "turkic", category: "modern", code: "tt" },
+	{ id: "ba", name: "Bashkir", native: "Башҡортса", flag: "🐎", country: "Bashkortostan", group: "turkic", category: "modern", code: "ba" },
+	{ id: "cv", name: "Chuvash", native: "Чӑвашла", flag: "🌾", country: "Chuvashia", group: "turkic", category: "modern", code: "cv" },
+	{ id: "tg", name: "Tajik", native: "Тоҷикӣ", flag: "🇹🇯", country: "Tajikistan", group: "iranian", category: "modern", code: "tg" },
+	{ id: "yue", name: "Cantonese", native: "廣東話", flag: "🇭🇰", country: "Hong Kong", group: "sinitic", category: "modern", code: "yue" },
+	{ id: "bo", name: "Tibetan", native: "བོད་སྐད་", flag: "🏔️", country: "Tibet", group: "tibeto-burman", category: "modern", code: "bo" },
+	{ id: "dz", name: "Dzongkha", native: "རྫོང་ཁ", flag: "🇧🇹", country: "Bhutan", group: "tibeto-burman", category: "modern", code: "dz" },
+	{ id: "dv", name: "Dhivehi", native: "ދިވެހި", flag: "🇲🇻", country: "Maldives", group: "indo-aryan", category: "modern", code: "dv" },
+	{ id: "mai", name: "Maithili", native: "मैथिली", flag: "🇮🇳", country: "India", group: "indo-aryan", category: "modern", code: "mai" },
+	{ id: "bho", name: "Bhojpuri", native: "भोजपुरी", flag: "🇮🇳", country: "India", group: "indo-aryan", category: "modern", code: "bho" },
+	{ id: "rw", name: "Kinyarwanda", native: "Ikinyarwanda", flag: "🇷🇼", country: "Rwanda", group: "bantu", category: "modern", code: "rw" },
+	{ id: "lg", name: "Luganda", native: "Luganda", flag: "🇺🇬", country: "Uganda", group: "bantu", category: "modern", code: "lg" },
+	{ id: "ny", name: "Chichewa", native: "Chichewa", flag: "🇲🇼", country: "Malawi", group: "bantu", category: "modern", code: "ny" },
+	{ id: "om", name: "Oromo", native: "Oromoo", flag: "🇪🇹", country: "Ethiopia", group: "cushitic", category: "modern", code: "om" },
+	{ id: "ak", name: "Akan", native: "Akan", flag: "🇬🇭", country: "Ghana", group: "akan", category: "modern", code: "ak" },
+	{ id: "ts", name: "Tsonga", native: "Xitsonga", flag: "🇿🇦", country: "South Africa", group: "bantu", category: "modern", code: "ts" },
+	{ id: "tn", name: "Tswana", native: "Setswana", flag: "🇧🇼", country: "Botswana", group: "bantu", category: "modern", code: "tn" },
+	{ id: "ilo", name: "Ilocano", native: "Ilokano", flag: "🇵🇭", country: "Philippines", group: "austronesian", category: "modern", code: "ilo" },
+	{ id: "ban", name: "Balinese", native: "Basa Bali", flag: "🇮🇩", country: "Indonesia", group: "austronesian", category: "modern", code: "ban" },
 ];
 
 // ---------------------------------------------------------------------------
@@ -188,16 +215,108 @@ export const PHRASEBOOKS: Record<string, Phrase[]> = {
 		{ en: "Summer is hotter than winter.", text: "הַקַּיִץ חָם מֵהַחֹרֶף" },
 	],
 	egy: [
-		{ en: "The sun is beautiful today.", text: "jw nfr rꜥ m hrw pn" },
-		{ en: "I drink water in the morning.", text: "jw.i swr mw m jbw" },
-		{ en: "The official is in the big house.", text: "jw sr nfr m pr ꜥꜣ" },
-		{ en: "The day is good in the village.", text: "nfrwt hrw m njwt" },
-		{ en: "The water is cool in the sky.", text: "jw mw qb m pt" },
-		{ en: "The year turns to winter.", text: "jw rnpwt kfn m prt" },
+		{ en: "The sun is beautiful today.", text: "𓇳𓄤𓆑𓂋 𓆓𓏤𓇳𓏤" },
+		{ en: "I drink water in the morning.", text: "𓇋𓈖𓆑 𓏇𓈖𓐍𓂋𓄿 𓆑𓈖𓐍𓏏" },
+		{ en: "The scribe writes with a reed pen.", text: "𓏞𓊃𓏏𓈖𓂋𓏤 𓌸𓂋𓏛𓏤" },
+		{ en: "The house is big and strong.", text: "𓉐𓏤𓆎𓅱𓊖𓏥 𓄔𓈖𓇳" },
+		{ en: "Life, prosperity and health!", text: "𓋹𓍑𓋴 𓆓𓏏𓇳" },
+		{ en: "The river flows to the sea.", text: "𓇋𓏏𓂋𓅱 𓆓𓈖𓇟𓆎𓅓𓊖" },
 	],
 };
 
 export const ALL_LANGS: LangDef[] = [...MODERN, ...ANCIENT];
+
+// ---------------------------------------------------------------------------
+// Fake languages (only in Super Hard mode — procedurally generated gibberish)
+// ---------------------------------------------------------------------------
+
+export type FakeLangDef = LangDef & {
+	syllables: string[];
+	endings: string[];
+};
+
+const FAKE: FakeLangDef[] = [
+	{
+		id: "velmoran", name: "Velmoran", native: "Velmoreth", flag: "🪐", country: "Velmora Prime",
+		group: "fake-velmar", category: "fake",
+		syllables: ["vel", "ora", "miel", "tha", "lun", "ser", "avi", "elo"],
+		endings: ["ra", "nie", "los", "tha", "mir", "en"],
+	},
+	{
+		id: "kavanni", name: "Kavanni", native: "Kavannia", flag: "🦋", country: "Kavath Isle",
+		group: "fake-velmar", category: "fake",
+		syllables: ["ka", "van", "ni", "sol", "te", "mar", "ilu", "ren"],
+		endings: ["ni", "ka", "sel", "ta", "vin", "lo"],
+	},
+	{
+		id: "mirreni", name: "Mirreni", native: "Mirrenil", flag: "🌙", country: "Mirren Delta",
+		group: "fake-velmar", category: "fake",
+		syllables: ["mi", "rre", "na", "sel", "vi", "lo", "the", "enna"],
+		endings: ["ni", "ssa", "rel", "mo", "ne", "li"],
+	},
+	{
+		id: "zuthric", name: "Zuthric", native: "Zuthrik", flag: "⚙️", country: "Zuthkar Republic",
+		group: "fake-zuth", category: "fake",
+		syllables: ["zuth", "rak", "vo", "grim", "kesh", "dro", "ul", "mak"],
+		endings: ["ik", "or", "ath", "ek", "uz", "rim"],
+	},
+	{
+		id: "brakthar", name: "Brak'thar", native: "Brak'thari", flag: "🔥", country: "Brak'thar Wastes",
+		group: "fake-zuth", category: "fake",
+		syllables: ["brak", "thu", "gar", "zim", "rok", "ash", "dul", "kor"],
+		endings: ["'tar", "akh", "ug", "rim", "oth", "zak"],
+	},
+	{
+		id: "ondulese", name: "Ondulese", native: "Ondulès", flag: "🌊", country: "Ondu Atoll",
+		group: "fake-ondu", category: "fake",
+		syllables: ["on", "du", "le", "mar", "so", "ti", "ela", "nu"],
+		endings: ["se", "lo", "re", "nth", "da", "is"],
+	},
+	{
+		id: "yeshari", name: "Yeshari", native: "Yesharin", flag: "👁️", country: "Yeshar Steppe",
+		group: "fake-yesh", category: "fake",
+		syllables: ["ye", "sha", "ri", "ko", "nam", "ta", "su", "ren"],
+		endings: ["ari", "esh", "un", "ka", "ir", "osh"],
+	},
+	{
+		id: "quovax", name: "Quovax", native: "Quovaxi", flag: "🐉", country: "Quovax Basin",
+		group: "fake-quov", category: "fake",
+		syllables: ["quo", "vax", "zi", "mor", "peb", "lu", "kaw", "ex"],
+		endings: ["ax", "ix", "ox", "eth", "ux", "ar"],
+	},
+];
+
+function hashStr(s: string): number {
+	let h = 2166136261;
+	for (let i = 0; i < s.length; i++) {
+		h ^= s.charCodeAt(i);
+		h = Math.imul(h, 16777619);
+	}
+	return h >>> 0;
+}
+
+export function fakeTranslate(langId: string, sentence: string): string {
+	const def = FAKE.find((l) => l.id === langId);
+	if (!def) return sentence;
+	return sentence
+		.split(/(\s+)/)
+		.map((part) => {
+			if (/^\s+$/.test(part)) return part;
+			const m = part.match(/^(\W*)(.*?)(\W*)$/s);
+			if (!m || !m[2]) return part;
+			const [, pre, core, post] = m;
+			const h = hashStr(def.id + ":" + core.toLowerCase());
+			const sylCount = core.length <= 3 ? 2 : ((h >>> 3) % 2) + 2;
+			let w = "";
+			for (let i = 0; i < sylCount; i++) {
+				w += def.syllables[(h >>> (i * 4)) % def.syllables.length];
+			}
+			w += def.endings[(h >>> 9) % def.endings.length];
+			if (/^[A-Z]/.test(core)) w = w.charAt(0).toUpperCase() + w.slice(1);
+			return pre + w + post;
+		})
+		.join("");
+}
 
 const LANG_MAP = new Map(ALL_LANGS.map((l) => [l.id, l]));
 
@@ -258,26 +377,20 @@ export async function translateText(text: string, targetCode: string): Promise<s
 }
 
 // ---------------------------------------------------------------------------
-// Hint obfuscation — players can only see every Nth letter of each word
+// Hint masking — whole words only (never partial letters)
 // ---------------------------------------------------------------------------
 
 export function obfuscate(text: string, mode: HintMode): string {
 	if (mode === "full") return text;
-	const step = mode === "half" ? 2 : mode === "first" ? 99 : 3;
-	let out = "";
-	let letterIdx = 0;
-	for (const ch of text) {
-		if (/[\p{L}\p{M}]/u.test(ch)) {
-			letterIdx++;
-			if (mode === "first") {
-				out += letterIdx === 1 ? ch : "·";
-			} else {
-				out += letterIdx % step === 0 ? ch : "·";
-			}
-		} else {
-			out += ch;
-			if (/\s/.test(ch)) letterIdx = 0;
-		}
-	}
-	return out;
+	const showEvery = mode === "some" ? 3 : 6; // some → ~1/3 visible, most → ~1/6
+	let wordCount = 0;
+	return text
+		.split(/(\s+)/)
+		.map((part) => {
+			if (!part || /^\s+$/.test(part)) return part;
+			wordCount++;
+			if (wordCount % showEvery === 0) return part;
+			return "_".repeat([...part].length);
+		})
+		.join("");
 }

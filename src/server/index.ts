@@ -4,6 +4,7 @@ import type { Connection, ConnectionContext } from "partyserver";
 import {
 	ALL_LANGS,
 	PHRASEBOOKS,
+	fakeTranslate,
 	groupOf,
 	langById,
 	obfuscate,
@@ -72,7 +73,7 @@ function clamp(n: unknown, min: number, max: number, fallback: number): number {
 	return Math.min(max, Math.max(min, v));
 }
 
-const HINT_MODES: HintMode[] = ["third", "half", "first", "full"];
+const HINT_MODES: HintMode[] = ["full", "some", "most"];
 
 export class Globe extends Server {
 	players = new Map<string, Player>();
@@ -82,7 +83,8 @@ export class Globe extends Server {
 	roundNumber = 0;
 	currentRound: Round | null = null;
 	usedSentences = new Set<number>();
-	recentLangIds: string[] = []; // avoid repeating recent languages
+	usedLangIds = new Set<string>(); // never repeat a language until pool exhausted
+	pendingRemoval = new Map<string, ReturnType<typeof setTimeout>>();
 	private token = 0;
 	private timer: ReturnType<typeof setTimeout> | null = null;
 	private roomCode = "?????";
@@ -93,6 +95,7 @@ export class Globe extends Server {
 		return ALL_LANGS.filter((l) => {
 			if (l.category === "modern") return true;
 			if (l.category === "ancient") return this.settings.includeAncient;
+			if (l.category === "fake") return this.settings.includeFake;
 			return false;
 		});
 	}
@@ -272,7 +275,39 @@ export class Globe extends Server {
 					this.sync();
 				}
 				break;
+			case "reveal-now":
+				if (this.isHostConn(conn) && this.phase === "guessing") {
+					this.finishRound();
+				}
+				break;
+			case "kick":
+				if (this.isHostConn(conn)) {
+					this.handleKick(String((msg as { playerId?: string }).playerId ?? ""));
+				}
+				break;
+			case "ping":
+				break; // keepalive � nothing to answer
 		}
+	}
+
+	private handleKick(targetId: string) {
+		const target = this.players.get(targetId);
+		if (!target || target.isHost) return;
+		for (const c of this.getConnections()) {
+			if (this.connToPlayer.get(c.id) === targetId) {
+				this.connToPlayer.delete(c.id);
+				try {
+					c.close(4005, "kicked");
+				} catch { /* ignore */ }
+			}
+		}
+		const pend = this.pendingRemoval.get(targetId);
+		if (pend !== undefined) {
+			clearTimeout(pend);
+			this.pendingRemoval.delete(targetId);
+		}
+		this.players.delete(targetId);
+		this.sync();
 	}
 
 	private isHostConn(conn: Connection): boolean {
@@ -301,16 +336,13 @@ export class Globe extends Server {
 
 		// Reattach to an existing identity (refresh / reconnect)
 		if (previousId && this.players.has(previousId)) {
-			const player = this.players.get(previousId)!;
-			// Kick any stale connection still bound to this identity
-			for (const other of this.getConnections()) {
-				if (other.id !== conn.id && this.connToPlayer.get(other.id) === previousId) {
-					this.connToPlayer.delete(other.id);
-					try {
-						other.close(4001, "replaced");
-					} catch { /* ignore */ }
-				}
+			// Cancel any pending seat removal — this is a returning guest
+			const pend = this.pendingRemoval.get(previousId);
+			if (pend !== undefined) {
+				clearTimeout(pend);
+				this.pendingRemoval.delete(previousId);
 			}
+			const player = this.players.get(previousId)!;
 			player.name = cleanName;
 			player.connected = true;
 			this.connToPlayer.set(conn.id, player.id);
@@ -369,31 +401,26 @@ export class Globe extends Server {
 		if (!player) return;
 
 		const stillBound = [...this.connToPlayer.values()].includes(pid);
-		if (!stillBound) {
-			player.connected = false;
-			player.guess = null;
-			player.guessedAt = null; // never leave ghost locks in
+		if (stillBound) return; // same guest on another tab
 
-			// Host migration
-			if (player.isHost && !stillBound) {
-				const heir = this.connectedPlayers()[0];
-				if (heir) {
-					heir.isHost = true;
-					player.isHost = false;
-				}
-			}
-		}
+		player.connected = false;
+		player.guess = null;
+		player.guessedAt = null; // never leave ghost locks in
 		this.sync();
 
-		// If everyone guessed except someone who just left, wrap the round up
-		if (this.phase === "guessing" && this.allGuessed()) {
-			this.finishRound();
-		}
-	}
-
-	private allGuessed(): boolean {
-		const active = this.connectedPlayers().filter((p) => !p.isHost || true); // host guesses too
-		return active.length > 0 && active.every((p) => p.guess !== null);
+		// Short grace for refreshes — then the seat is removed entirely.
+		const t = setTimeout(() => {
+			this.pendingRemoval.delete(pid);
+			const p = this.players.get(pid);
+			if (!p || p.connected) return;
+			this.players.delete(pid);
+			if (p.isHost) {
+				const heir = this.connectedPlayers()[0] ?? [...this.players.values()][0];
+				if (heir) heir.isHost = true;
+			}
+			this.sync();
+		}, 5000);
+		this.pendingRemoval.set(pid, t);
 	}
 
 	// -------------------------------------------------------------- settings
@@ -417,8 +444,12 @@ export class Globe extends Server {
 			s.autoNextSeconds = clamp(partial.autoNextSeconds, 0, 120, s.autoNextSeconds);
 		if (typeof partial.includeAncient === "boolean")
 			s.includeAncient = partial.includeAncient;
+		if (typeof partial.includeFake === "boolean")
+			s.includeFake = partial.includeFake;
 		if (partial.hintMode && HINT_MODES.includes(partial.hintMode))
 			s.hintMode = partial.hintMode;
+		if (partial.earlyReveal !== undefined)
+			s.earlyReveal = Boolean(partial.earlyReveal);
 		this.settings = s;
 		this.sync();
 	}
@@ -498,12 +529,22 @@ export class Globe extends Server {
 		let chosenId: string | null = null;
 		let wasPhrasebook = false;
 
-		// Prefer languages that haven't come up recently
-		const fresh = pool.filter((l) => !this.recentLangIds.includes(l.id));
-		const rollPool = fresh.length > 0 ? fresh : pool;
+		// Never repeat a language until the whole pool has been used once
+		let rollPool = pool.filter((l) => !this.usedLangIds.has(l.id));
+		if (rollPool.length === 0) {
+			this.usedLangIds.clear();
+			rollPool = pool;
+		}
 
 		for (let attempt = 0; attempt < 4; attempt++) {
 			const lang = randomOf(rollPool);
+			if (lang.category === "fake") {
+				chosenId = lang.id;
+				sentence = sentenceEn;
+				translation = fakeTranslate(lang.id, sentenceEn);
+				wasPhrasebook = false;
+				break;
+			}
 			if (lang.category === "ancient") {
 				if (lang.code) {
 					translation = await translateText(sentenceEn, lang.code);
@@ -540,7 +581,7 @@ export class Globe extends Server {
 		if (myToken !== this.token) return; // superseded by a newer request
 
 		// Offline safety net: live translation failed entirely — use an ancient
-		// phrasebook round if one is enabled, else give up gracefully.
+		// phrasebook round or a locally generated fake round, else give up.
 		if (!chosenId || translation === null) {
 			const bookLangs = pool.filter((l) => l.category === "ancient" && PHRASEBOOKS[l.id]?.length);
 			if (bookLangs.length > 0) {
@@ -551,6 +592,15 @@ export class Globe extends Server {
 				translation = phrase.text;
 				wasPhrasebook = true;
 				console.warn("[polygloss] offline fallback → phrasebook round");
+			} else {
+				const fakes = pool.filter((l) => l.category === "fake");
+				if (fakes.length > 0) {
+					const lang = randomOf(fakes);
+					chosenId = lang.id;
+					sentence = sentenceEn;
+					translation = fakeTranslate(lang.id, sentenceEn);
+					console.warn("[polygloss] offline fallback → fake round");
+				}
 			}
 		}
 
@@ -564,8 +614,7 @@ export class Globe extends Server {
 		}
 
 		this.usedSentences.add(sentenceIndex);
-		this.recentLangIds.push(chosenId);
-		if (this.recentLangIds.length > 15) this.recentLangIds.shift();
+		this.usedLangIds.add(chosenId);
 		this.roundNumber++;
 		this.phase = "guessing";
 		for (const p of this.players.values()) {
@@ -603,7 +652,12 @@ export class Globe extends Server {
 		player.guess = choiceId;
 		player.guessedAt = Date.now();
 		this.sync();
-		if (this.allGuessed()) this.finishRound();
+		if (this.settings.earlyReveal && this.allGuessed()) this.finishRound();
+	}
+
+	private allGuessed(): boolean {
+		const active = [...this.players.values()].filter((p) => p.connected || p.guess !== null);
+		return active.length > 0 && active.every((p) => p.guess !== null);
 	}
 
 	private finishRound() {

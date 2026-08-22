@@ -68,10 +68,9 @@ function Logo({ small }: { small?: boolean }) {
 }
 
 const HINT_LABELS: Record<GameSettings["hintMode"], string> = {
-	first: "Only first letters",
-	third: "Every 3rd letter visible",
-	half: "Half the letters visible",
-	full: "Full text (no hints)",
+	full: "Full text",
+	some: "Some words hidden",
+	most: "Most words hidden",
 };
 
 // --------------------------------------------------------------------------- Home
@@ -193,6 +192,31 @@ function SettingsPanel({
 	return (
 		<section className={`card settings ${canEdit ? "" : "locked-panel"}`}>
 			<h3>⚙️ Match settings {!canEdit && <em>(host only)</em>}</h3>
+			{canEdit && (
+				<div className="difficulty-row">
+					<span className="field-label-sm">🎚️ Difficulty presets</span>
+					<div className="presets">
+						<button
+							className="preset"
+							onClick={() => onChange({ hintMode: "full", choiceCount: 4, roundSeconds: 60, includeAncient: false, includeFake: false })}
+						>
+							🙂 Easy
+						</button>
+						<button
+							className="preset"
+							onClick={() => onChange({ hintMode: "some", choiceCount: 6, roundSeconds: 45, includeAncient: true, includeFake: false })}
+						>
+							😐 Hard
+						</button>
+						<button
+							className="preset"
+							onClick={() => onChange({ hintMode: "most", choiceCount: 10, roundSeconds: 30, includeAncient: true, includeFake: true })}
+						>
+							💀 Super hard
+						</button>
+					</div>
+				</div>
+			)}
 			<div className="settings-grid">
 				<label>
 					<span>🎯 First to</span>
@@ -292,7 +316,25 @@ function SettingsPanel({
 						checked={settings.includeAncient}
 						onChange={(e) => onChange({ includeAncient: e.target.checked })}
 					/>
-					<span>🏛️ Ancient languages <small>Latin, Sanskrit, Old Norse…</small></span>
+					<span>🏛️ Ancient languages <small>Latin, Sanskrit, hieroglyphs…</small></span>
+				</label>
+				<label className="toggle">
+					<input
+						type="checkbox"
+						disabled={!canEdit}
+						checked={settings.includeFake}
+						onChange={(e) => onChange({ includeFake: e.target.checked })}
+					/>
+					<span>✨ Fake languages <small>Zuthric, Quovax… good luck</small></span>
+				</label>
+				<label className="toggle">
+					<input
+						type="checkbox"
+						disabled={!canEdit}
+						checked={settings.earlyReveal}
+						onChange={(e) => onChange({ earlyReveal: e.target.checked })}
+					/>
+					<span>⏩ End rounds early <small>reveal as soon as everyone has answered</small></span>
 				</label>
 			</div>
 			<label className="hint-select">
@@ -315,8 +357,9 @@ function SettingsPanel({
 
 // --------------------------------------------------------------------------- Sentence picker
 
-function SentencePicker({ onPick, onClose }: { onPick: (i: number) => void; onClose: () => void }) {
+function SentencePicker({ onStart, onClose }: { onStart: (i: number) => void; onClose: () => void }) {
 	const [q, setQ] = useState("");
+	const [sel, setSel] = useState<number | null>(null);
 	const ref = useRef<HTMLInputElement>(null);
 	useEffect(() => ref.current?.focus(), []);
 	const list = useMemo(() => {
@@ -339,14 +382,23 @@ function SentencePicker({ onPick, onClose }: { onPick: (i: number) => void; onCl
 					value={q}
 					onChange={(e) => setQ(e.target.value)}
 				/>
-				<p className="picker-count">{list.length} sentence{list.length === 1 ? "" : "s"}</p>
+				<p className="picker-count">
+					{sel !== null ? `Selected: “${SENTENCES[sel]}”` : `${list.length} sentences — click one to select`}
+				</p>
 				<ul className="sentence-list">
 					{list.map(({ s, i }) => (
 						<li key={i}>
-							<button onClick={() => onPick(i)}>{s}</button>
+							<button className={sel === i ? "selected" : ""} onClick={() => setSel(i)}>{s}</button>
 						</li>
 					))}
 				</ul>
+				<button
+					className="btn btn-primary btn-xl"
+					disabled={sel === null}
+					onClick={() => sel !== null && onStart(sel)}
+				>
+					{sel === null ? "Select a sentence above first" : "▶ Start round with this sentence"}
+				</button>
 			</div>
 		</div>
 	);
@@ -420,6 +472,7 @@ function GameScreen({
 	const [connected, setConnected] = useState(false);
 	const [showPicker, setShowPicker] = useState(false);
 	const [copied, setCopied] = useState(false);
+	const [kicked, setKicked] = useState(false);
 	const sentHello = useRef(false);
 
 	const socket = usePartySocket({
@@ -451,6 +504,15 @@ function GameScreen({
 		},
 	});
 
+	// Detect host kicks (server closes with 4005)
+	useEffect(() => {
+		const h = (e: CloseEvent) => {
+			if (e.code === 4005) setKicked(true);
+		};
+		socket.addEventListener("close", h as EventListener);
+		return () => socket.removeEventListener("close", h as EventListener);
+	}, [socket]);
+
 	const send = useCallback(
 		(msg: IncomingMessage) => {
 			try {
@@ -473,12 +535,20 @@ function GameScreen({
 	const you = state?.players.find((p) => p.id === myId) ?? null;
 	const isHost = !!you?.isHost;
 
-	// Privacy: discourage screenshots, printing & text copying during play
+	// Keepalive — stops proxies/NAT from silently dropping the socket
+	useEffect(() => {
+		if (!connected || kicked) return;
+		const iv = setInterval(() => send({ type: "ping" }), 25000);
+		return () => clearInterval(iv);
+	}, [connected, kicked, send]);
+
+	// Privacy: discourage screenshots, printing, devtools & text copying
 	useEffect(() => {
 		const prevent = (e: Event) => e.preventDefault();
 		const onKey = (e: KeyboardEvent) => {
 			const k = e.key.toLowerCase();
 			if ((e.ctrlKey || e.metaKey) && ["p", "s", "u"].includes(k)) e.preventDefault();
+			if ((e.ctrlKey || e.metaKey) && e.shiftKey && ["i", "j", "c"].includes(k)) e.preventDefault();
 			if (e.key === "PrintScreen") e.preventDefault();
 		};
 		const onKeyUp = (e: KeyboardEvent) => {
@@ -491,6 +561,13 @@ function GameScreen({
 		const blurOn = () => document.body.classList.add("privacy-blur");
 		const blurOff = () => document.body.classList.remove("privacy-blur");
 		const onVis = () => (document.hidden ? blurOn() : blurOff());
+		const checkDevtools = () => {
+			const open =
+				window.outerHeight - window.innerHeight > 160 ||
+				window.outerWidth - window.innerWidth > 160;
+			document.body.classList.toggle("privacy-blur", open && !document.hidden);
+		};
+		const dtIv = setInterval(checkDevtools, 2000);
 		document.addEventListener("contextmenu", prevent);
 		document.addEventListener("copy", prevent);
 		document.addEventListener("cut", prevent);
@@ -499,8 +576,11 @@ function GameScreen({
 		window.addEventListener("keyup", onKeyUp);
 		window.addEventListener("blur", blurOn);
 		window.addEventListener("focus", blurOff);
+		window.addEventListener("resize", checkDevtools);
 		document.addEventListener("visibilitychange", onVis);
+		checkDevtools();
 		return () => {
+			clearInterval(dtIv);
 			document.removeEventListener("contextmenu", prevent);
 			document.removeEventListener("copy", prevent);
 			document.removeEventListener("cut", prevent);
@@ -509,6 +589,7 @@ function GameScreen({
 			window.removeEventListener("keyup", onKeyUp);
 			window.removeEventListener("blur", blurOn);
 			window.removeEventListener("focus", blurOff);
+			window.removeEventListener("resize", checkDevtools);
 			document.removeEventListener("visibilitychange", onVis);
 			blurOff();
 		};
@@ -524,6 +605,17 @@ function GameScreen({
 			() => { /* clipboard unavailable */ },
 		);
 	};
+
+	if (kicked) {
+		return (
+			<div className="screen-center">
+				<div className="card error-card pop-in">
+					<p>🚪 You were removed from the room by the host.</p>
+					<button className="btn btn-primary" onClick={onLeave}>← Back home</button>
+				</div>
+			</div>
+		);
+	}
 
 	if (error && !state) {
 		return (
@@ -578,7 +670,7 @@ function GameScreen({
 
 			{showPicker && (
 				<SentencePicker
-					onPick={(i) => {
+					onStart={(i) => {
 						setShowPicker(false);
 						send({ type: "start-round", sentenceIndex: i });
 					}}
@@ -643,9 +735,18 @@ function LobbyView({
 				<section className="card players-card pop-in">
 					<h3>Players <span className="dim">{state.players.length}/{MAX_PLAYERS + 1}</span></h3>
 					<PlayerRow p={state.players.find((p) => p.isHost) ?? null} kind="host" />
-					{Array.from({ length: slots }, (_, i) => (
-						<PlayerRow key={i} p={guests[i] ?? null} kind="guest" />
-					))}
+					{Array.from({ length: slots }, (_, i) => {
+						const guest = guests[i] ?? null;
+						return (
+							<PlayerRow
+								key={i}
+								p={guest}
+								kind="guest"
+								canKick={isHost}
+								onKick={() => guest && onSend({ type: "kick", playerId: guest.id })}
+							/>
+						);
+					})}
 				</section>
 				<SettingsPanel
 					settings={state.settings}
@@ -657,7 +758,17 @@ function LobbyView({
 	);
 }
 
-function PlayerRow({ p, kind }: { p: PublicState["players"][number] | null; kind: "host" | "guest" }) {
+function PlayerRow({
+	p,
+	kind,
+	canKick,
+	onKick,
+}: {
+	p: PublicState["players"][number] | null;
+	kind: "host" | "guest";
+	canKick?: boolean;
+	onKick?: () => void;
+}) {
 	if (!p) {
 		return (
 			<div className="player-row empty">
@@ -674,6 +785,15 @@ function PlayerRow({ p, kind }: { p: PublicState["players"][number] | null; kind
 				{kind === "host" && <span className="crown">👑 host</span>}
 			</span>
 			{!p.connected && <span className="off-dot" title="offline">◌</span>}
+			{canKick && kind !== "host" && p.connected && (
+				<button
+					className="kick-btn"
+					title={`Remove ${p.name}`}
+					onClick={onKick}
+				>
+					✕
+				</button>
+			)}
 		</div>
 	);
 }
@@ -708,8 +828,8 @@ function HintSwitch({
 	onSend: (m: IncomingMessage) => void;
 }) {
 	if (!isHost) return null;
-	const order: GameSettings["hintMode"][] = ["third", "half", "first", "full"];
-	const short: Record<GameSettings["hintMode"], string> = { third: "⅓", half: "½", first: "1st", full: "all" };
+	const order: GameSettings["hintMode"][] = ["full", "some", "most"];
+	const short: Record<GameSettings["hintMode"], string> = { full: "ALL", some: "SOME", most: "MOST" };
 	return (
 		<span className="presets" title="What players see of the translated text">
 			{order.map((m) => (
@@ -807,6 +927,17 @@ function RoundView({
 						</span>
 					))}
 				</div>
+
+				{isHost && (
+					<div className="next-row">
+						<button className="btn btn-secondary" onClick={() => onSend({ type: "reveal-now" })}>
+							⏭️ Reveal now
+						</button>
+						{!state.settings.earlyReveal && (
+							<span className="auto-countdown">answers lock instantly — reveal waits for the timer</span>
+						)}
+					</div>
+				)}
 			</main>
 		);
 	}
@@ -944,9 +1075,15 @@ function RoundView({
 function App() {
 	const [session, setSession] = useState<{ room: string; name: string } | null>(() => {
 		const params = new URLSearchParams(location.search);
-		const code = params.get("room");
-		const savedName = localStorage.getItem("polygloss:name");
-		if (code && savedName) return { room: code.toUpperCase(), name: savedName };
+		const code = params.get("room")?.toUpperCase();
+		if (!code) return null;
+		// Only re-enter automatically when this browser already holds a seat
+		// in the room — first-time visitors always type their guest name.
+		try {
+			const savedId = localStorage.getItem(idKey(code));
+			const savedName = localStorage.getItem("polygloss:name");
+			if (savedId && savedName) return { room: code, name: savedName };
+		} catch { /* private mode */ }
 		return null;
 	});
 	const initialCode = useMemo(() => {
