@@ -260,6 +260,7 @@ b { color: #fff; }
 	align-items: center;
 	gap: 1rem;
 	margin-bottom: 1.25rem;
+	flex-wrap: wrap;
 }
 .topbar .logo { margin-right: auto; }
 

@@ -12,9 +12,9 @@ import {
 } from "../game/languages";
 import { SENTENCES } from "../game/sentences";
 import {
+	censorText,
 	DEFAULT_SETTINGS,
 	MAX_PLAYERS,
-	validateChatText,
 	validateGuestName,
 } from "../shared";
 import type {
@@ -31,6 +31,7 @@ import type {
 
 type Player = {
 	id: string;
+	secret: string; // seat token — required to reattach, blocks hijacking
 	name: string;
 	score: number;
 	isHost: boolean;
@@ -95,6 +96,7 @@ export class Globe extends Server {
 	lastPhase: Phase = "lobby";
 	chatLog: { name: string; text: string }[] = [];
 	lastChatByPlayer = new Map<string, number>();
+	lastActionByPlayer = new Map<string, number>();
 
 	// ------------------------------------------------------------------ util
 
@@ -211,10 +213,10 @@ export class Globe extends Server {
 		return env.RoomDirectory.get(env.RoomDirectory.idFromName("global"));
 	}
 
-	private pushToDirectory(force = false): void {
+	private pushToDirectory(force = false, minIntervalMs = 4000): void {
 		if (!this.isPublic || this.players.size === 0) return;
 		const now = Date.now();
-		if (!force && now - this.lastDirPush < 4000) return;
+		if (!force && now - this.lastDirPush < minIntervalMs) return;
 		this.lastDirPush = now;
 		const host = [...this.players.values()].find((p) => p.isHost);
 		const entry = {
@@ -286,6 +288,7 @@ export class Globe extends Server {
 
 	async onMessage(conn: Connection, message: ArrayBuffer | ArrayBufferView | string) {
 		if (typeof message !== "string") return;
+		if (message.length > 4096) return; // frame-size cap — no oversized payloads
 		let msg: IncomingMessage;
 		try {
 			msg = JSON.parse(message) as IncomingMessage;
@@ -295,7 +298,7 @@ export class Globe extends Server {
 
 		switch (msg.type) {
 			case "hello":
-				this.handleHello(msg.name, msg.previousId, msg.password, conn);
+				this.handleHello(msg.name, msg.previousId, msg.password, msg.secret, conn);
 				break;
 			case "settings":
 				this.handleSettings(msg.settings, conn);
@@ -355,7 +358,9 @@ export class Globe extends Server {
 				}
 				break;
 			case "ping":
-				break; // keepalive — nothing to answer
+				// keepalive + directory heartbeat (throttled inside)
+				this.pushToDirectory(false, 15000);
+				break;
 			case "room-config":
 				if (this.isHostConn(conn)) {
 					this.handleRoomConfig(msg.isPublic, msg.password);
@@ -367,16 +372,57 @@ export class Globe extends Server {
 			case "chat":
 				this.handleChat(String(msg.text ?? ""), conn);
 				break;
+			case "leave":
+				// Intentional exit — remove the seat immediately
+				this.handleLeave(conn);
+				break;
 		}
+	}
+
+	private handleLeave(conn: Connection) {
+		const pid = this.connToPlayer.get(conn.id);
+		if (!pid) return;
+		for (const c of this.getConnections()) {
+			if (this.connToPlayer.get(c.id) === pid) {
+				this.connToPlayer.delete(c.id);
+				try {
+					c.close(1000, "left");
+				} catch { /* ignore */ }
+			}
+		}
+		const pend = this.pendingRemoval.get(pid);
+		if (pend !== undefined) {
+			clearTimeout(pend);
+			this.pendingRemoval.delete(pid);
+		}
+		const player = this.players.get(pid);
+		if (!player) return;
+		this.players.delete(pid);
+		if (player.isHost) {
+			const heir = this.connectedPlayers()[0] ?? [...this.players.values()][0];
+			if (heir) heir.isHost = true;
+		}
+		if (this.players.size === 0) this.removeFromDirectory();
+		this.sync();
 	}
 
 	private handleUnanswer(conn: Connection) {
 		if (this.phase !== "guessing") return;
 		const player = this.playerByConn(conn);
 		if (!player || player.guess === null) return;
+		if (!this.actionAllowed(player.id)) return; // flood guard
 		player.guess = null;
 		player.guessedAt = null;
 		this.sync();
+	}
+
+	/** 250ms min gap between state-changing actions per player (anti-spam). */
+	private actionAllowed(playerId: string): boolean {
+		const now = Date.now();
+		const last = this.lastActionByPlayer.get(playerId) ?? 0;
+		if (now - last < 250) return false;
+		this.lastActionByPlayer.set(playerId, now);
+		return true;
 	}
 
 	private handleChat(rawText: string, conn: Connection) {
@@ -391,14 +437,11 @@ export class Globe extends Server {
 		if (now - last < 500) return;
 		this.lastChatByPlayer.set(player.id, now);
 
-		const blocked = validateChatText(text);
-		if (blocked) {
-			this.sendError(conn, blocked);
-			return;
-		}
+		// Bad words become *** instead of being rejected
+		const clean = censorText(text);
 
-		const out = { type: "chat", from: player.id, name: player.name, text } satisfies OutgoingMessage;
-		this.chatLog.push({ name: player.name, text });
+		const out = { type: "chat", from: player.id, name: player.name, text: clean } satisfies OutgoingMessage;
+		this.chatLog.push({ name: player.name, text: clean });
 		if (this.chatLog.length > 50) this.chatLog.shift();
 		try {
 			this.broadcast(JSON.stringify(out));
@@ -442,6 +485,7 @@ export class Globe extends Server {
 		rawName: string,
 		previousId: string | undefined,
 		password: string | undefined,
+		secret: string | undefined,
 		conn: Connection,
 	) {
 		// Ignore duplicate hellos on an already-bound connection
@@ -458,8 +502,13 @@ export class Globe extends Server {
 		}
 		const cleanName = String(rawName).trim().replace(/\s+/g, " ").slice(0, 16);
 
-		// Reattach to an existing identity (refresh / reconnect)
-		if (previousId && this.players.has(previousId)) {
+		// Reattach to an existing identity (refresh / reconnect) — the seat
+		// token must match, otherwise this is treated as a brand-new joiner
+		if (
+			previousId &&
+			this.players.has(previousId) &&
+			this.players.get(previousId)!.secret === secret
+		) {
 			// Cancel any pending seat removal — this is a returning guest
 			const pend = this.pendingRemoval.get(previousId);
 			if (pend !== undefined) {
@@ -470,7 +519,7 @@ export class Globe extends Server {
 			player.name = cleanName;
 			player.connected = true;
 			this.connToPlayer.set(conn.id, player.id);
-			this.sendTo(conn, { type: "welcome", playerId: player.id } satisfies OutgoingMessage);
+			this.sendTo(conn, { type: "welcome", playerId: player.id, secret: player.secret } satisfies OutgoingMessage);
 			this.sendChatHistory(conn);
 			this.sync();
 			return;
@@ -505,6 +554,7 @@ export class Globe extends Server {
 		const isFirst = this.players.size === 0;
 		const player: Player = {
 			id: crypto.randomUUID(),
+			secret: crypto.randomUUID(),
 			name,
 			score: 0,
 			isHost: isFirst,
@@ -515,8 +565,8 @@ export class Globe extends Server {
 		};
 		this.players.set(player.id, player);
 		this.connToPlayer.set(conn.id, player.id);
-		this.sendTo(conn, { type: "welcome", playerId: player.id } satisfies OutgoingMessage);
-			this.sendChatHistory(conn);
+		this.sendTo(conn, { type: "welcome", playerId: player.id, secret: player.secret } satisfies OutgoingMessage);
+		this.sendChatHistory(conn);
 		this.sync();
 	}
 
@@ -786,6 +836,7 @@ export class Globe extends Server {
 		if (this.phase !== "guessing" || !this.currentRound) return;
 		const player = this.playerByConn(conn);
 		if (!player) return;
+		if (!this.actionAllowed(player.id)) return; // flood guard
 		if (!this.currentRound.choices.some((c) => c.id === choiceId)) return;
 		const wasNew = player.guess === null;
 		player.guess = choiceId; // switching answers is allowed until reveal
@@ -900,9 +951,10 @@ export class RoomDirectory {
 		}
 
 		if (url.pathname.endsWith("/list")) {
-			const now = Date.now();
+			// Prune rooms that stopped heartbeating — dead lobbies vanish fast
+			const cutoff = Date.now() - 60_000;
 			for (const [k, v] of this.rooms) {
-				if (now - v.ts > 86_400_000) this.rooms.delete(k); // prune stale >24h
+				if (v.ts < cutoff) this.rooms.delete(k);
 			}
 			const list = [...this.rooms.values()].sort((a, b) => b.players - a.players);
 			return Response.json(list);

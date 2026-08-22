@@ -28,6 +28,10 @@ function idKey(room: string): string {
 	return `polygloss:id:${room.toUpperCase()}`;
 }
 
+function secretKey(room: string): string {
+	return `polygloss:secret:${room.toUpperCase()}`;
+}
+
 // ---------------------------------------------------------------------------
 
 const GlyphRain = React.memo(function GlyphRain() {
@@ -105,7 +109,7 @@ function RoomList({ onJoin, nameReady }: { onJoin: (code: string, pw?: string) =
 
 	useEffect(() => {
 		load();
-		const iv = setInterval(load, 10000);
+		const iv = setInterval(load, 5000); // auto-refresh every few seconds
 		return () => clearInterval(iv);
 	}, [load]);
 
@@ -155,17 +159,17 @@ function RoomList({ onJoin, nameReady }: { onJoin: (code: string, pw?: string) =
 							{r.hasPassword && <span title="password protected">🔒</span>}
 							<button
 								className="btn btn-secondary btn-sm"
-								onClick={() =>
-									r.hasPassword ? setPwFor(r.code) : onJoin(r.code)
-								}
+								onClick={() => (r.hasPassword ? setPwFor(r.code) : onJoin(r.code))}
 							>
-								J{r.hasPassword ? "oin 🔒" : "oin"}
+								{r.hasPassword ? "Unlock" : "Join"}
 							</button>
 						</>
 					)}
 				</div>
 			))}
-			<p className="roomlist-hint">{nameReady ? "" : "Type your guest name above first."}</p>
+			<p className="roomlist-hint">
+				{nameReady ? "Auto-refreshes every few seconds." : "Type your guest name above first."}
+			</p>
 		</div>
 	);
 }
@@ -671,6 +675,7 @@ function GameScreen({
 					setMyId(msg.playerId);
 					try {
 						localStorage.setItem(idKey(room), msg.playerId);
+						localStorage.setItem(secretKey(room), msg.secret);
 					} catch { /* private mode */ }
 					break;
 				case "state":
@@ -688,6 +693,16 @@ function GameScreen({
 			setConnected(false);
 		},
 	});
+
+	// Tell the server we're leaving so the seat frees up instantly
+	useEffect(() => {
+		return () => {
+			try {
+				socket.send(JSON.stringify({ type: "leave" }));
+				socket.close(1000, "left");
+			} catch { /* already closed */ }
+		};
+	}, [socket]);
 
 	// Detect host kicks (server closes with 4005)
 	useEffect(() => {
@@ -711,13 +726,16 @@ function GameScreen({
 		if (!connected || sentHello.current) return;
 		sentHello.current = true;
 		let previousId: string | undefined;
+		let secret: string | undefined;
 		try {
 			previousId = localStorage.getItem(idKey(room)) ?? undefined;
+			secret = localStorage.getItem(secretKey(room)) ?? undefined;
 		} catch { /* ignore */ }
 		send({
 			type: "hello",
 			name,
 			previousId,
+			secret,
 			...(password ? { password } : {}),
 		});
 	}, [connected, name, room, password, send]);

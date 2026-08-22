@@ -96,7 +96,7 @@ export type PublicState = {
 };
 
 export type IncomingMessage =
-	| { type: "hello"; name: string; previousId?: string; password?: string }
+	| { type: "hello"; name: string; previousId?: string; password?: string; secret?: string }
 	| { type: "settings"; settings: Partial<GameSettings> }
 	| { type: "start-round"; sentenceIndex?: number }
 	| { type: "quick-start" }
@@ -109,11 +109,12 @@ export type IncomingMessage =
 	| { type: "ping" }
 	| { type: "room-config"; isPublic?: boolean; password?: string | null }
 	| { type: "unanswer" }
-	| { type: "chat"; text: string };
+	| { type: "chat"; text: string }
+	| { type: "leave" };
 
 export type OutgoingMessage =
 	| { type: "state"; state: PublicState }
-	| { type: "welcome"; playerId: string }
+	| { type: "welcome"; playerId: string; secret: string }
 	| { type: "error"; message: string }
 	| { type: "chat"; from: string; name: string; text: string };
 
@@ -150,12 +151,24 @@ const BLOCK_SUBSTR = [
 
 // Strong profanity & slurs — blocked as whole words only
 const BLOCK_TOKENS = [
-	"fuck", "fuk", "phuck", "motherfuck", "cunt", "kike", "spic",
-	"chink", "gook", "paki", "tranny", "retard", "fag", "fags",
-	"dyke", "bitch", "bicth", "whore", "hoore", "slut", "dick",
-	"cock", "pussy", "penis", "vagina", "boobs", "tities", "tits",
+	"dick", "cock", "pussy", "penis", "vagina", "boobs", "tities", "tits",
 	"wank", "wanker", "jizz", "cum", "porn", "rape", "sex",
+	"fag", "fags", "dyke", "paki", "gook", "spic", "kike", "chink", "coon", "ho",
 ];
+
+// Unambiguous stems — anything containing these gets caught (fuck/shit/etc.)
+const BLOCK_STEMS = [
+	"fuck", "shit", "cunt", "bitch", "bicth", "whore", "hoore", "slut",
+	"nigg", "faggot", "fagg", "retard", "tranny", "pedofil", "pedophil",
+	"rapist", "wetback", "beaner", "towelhead", "raghead", "jigaboo",
+	"shitskin", "hitler", "douch",
+];
+
+function isBadWord(normalizedWord: string): boolean {
+	if (!normalizedWord) return false;
+	if (BLOCK_TOKENS.includes(normalizedWord)) return true;
+	return BLOCK_STEMS.some((stem) => normalizedWord.includes(stem));
+}
 
 /**
  * Returns null if the name is fine, otherwise a reason it was rejected.
@@ -176,25 +189,28 @@ export function validateGuestName(raw: string): string | null {
 		if (norm.includes(bad)) return "That name isn't allowed — pick another.";
 	}
 	for (const tok of tokensOf(norm)) {
-		if (BLOCK_TOKENS.includes(tok)) return "That name isn't allowed — pick another.";
+		if (isBadWord(tok)) return "That name isn't allowed — pick another.";
 	}
 	return null;
 }
 
 /**
- * Chat filter — same blocklists as names, but normal message length.
- * Returns null if the text is fine.
+ * Chat censor — replaces bad words with matching-length asterisks instead of
+ * rejecting the message. Returns the cleaned text.
  */
-export function validateChatText(raw: string): string | null {
-	const text = String(raw ?? "").trim();
-	if (!text) return null;
-	if (text.length > 200) return "Keep messages under 200 characters.";
-	const norm = normalizeName(text);
-	for (const bad of BLOCK_SUBSTR) {
-		if (norm.includes(bad)) return "That message isn't allowed.";
-	}
-	for (const tok of tokensOf(norm)) {
-		if (BLOCK_TOKENS.includes(tok)) return "That message isn't allowed.";
-	}
-	return null;
+export function censorText(raw: string): string {
+	const words = String(raw ?? "").split(/(\s+)/);
+	return words
+		.map((word) => {
+			if (!word || /^\s+$/.test(word)) return word;
+			const norm = normalizeName(word);
+			let bad = BLOCK_SUBSTR.some((s) => norm.includes(s));
+			if (!bad) {
+				for (const tok of tokensOf(norm)) {
+					if (isBadWord(tok)) { bad = true; break; }
+				}
+			}
+			return bad ? "*".repeat([...word].length) : word;
+		})
+		.join("");
 }
