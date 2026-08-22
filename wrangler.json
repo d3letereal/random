@@ -6,6 +6,10 @@
 		{
 			"new_sqlite_classes": ["Globe"],
 			"tag": "v1"
+		},
+		{
+			"new_sqlite_classes": ["RoomDirectory"],
+			"tag": "v2"
 		}
 	],
 	"assets": {
@@ -14,14 +18,18 @@
 	"build": {
 		"command": "npx esbuild src/client/index.tsx --bundle --outdir=public/dist --splitting --sourcemap --format=esm"
 	},
-	"durable_objects": {
-		"bindings": [
-			{
-				"class_name": "Globe",
-				"name": "Globe"
-			}
-		]
-	},
+		"durable_objects": {
+			"bindings": [
+				{
+					"class_name": "Globe",
+					"name": "Globe"
+				},
+				{
+					"class_name": "RoomDirectory",
+					"name": "RoomDirectory"
+				}
+			]
+		},
 	"observability": {
 		"enabled": true
 	},

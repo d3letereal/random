@@ -14,6 +14,7 @@ import { SENTENCES } from "../game/sentences";
 import {
 	DEFAULT_SETTINGS,
 	MAX_PLAYERS,
+	validateChatText,
 	validateGuestName,
 } from "../shared";
 import type {
@@ -88,6 +89,12 @@ export class Globe extends Server {
 	private token = 0;
 	private timer: ReturnType<typeof setTimeout> | null = null;
 	private roomCode = "?????";
+	isPublic = false;
+	roomPassword: string | null = null;
+	lastDirPush = 0;
+	lastPhase: Phase = "lobby";
+	chatLog: { name: string; text: string }[] = [];
+	lastChatByPlayer = new Map<string, number>();
 
 	// ------------------------------------------------------------------ util
 
@@ -170,7 +177,9 @@ export class Globe extends Server {
 			players: publicPlayers,
 			settings: this.settings,
 			roomCode: this.roomCode,
-			maxPlayers: MAX_PLAYERS,
+			isPublic: this.isPublic,
+			hasPassword: this.roomPassword !== null,
+			maxPlayers: this.settings.maxPlayers,
 			roundNumber: this.roundNumber,
 			obfuscatedText:
 				this.phase === "guessing" && round
@@ -188,6 +197,66 @@ export class Globe extends Server {
 		};
 
 		this.broadcast(JSON.stringify({ type: "state", state } satisfies OutgoingMessage));
+
+		// Keep the public directory in sync for listed rooms
+		const phaseChanged = this.phase !== this.lastPhase;
+		this.lastPhase = this.phase;
+		if (this.isPublic) this.pushToDirectory(phaseChanged);
+	}
+
+	// ------------------------------------------------------------ directory
+
+	private dirStub(): DurableObjectStub {
+		const env = (this as unknown as { env: Env }).env;
+		return env.RoomDirectory.get(env.RoomDirectory.idFromName("global"));
+	}
+
+	private pushToDirectory(force = false): void {
+		if (!this.isPublic || this.players.size === 0) return;
+		const now = Date.now();
+		if (!force && now - this.lastDirPush < 4000) return;
+		this.lastDirPush = now;
+		const host = [...this.players.values()].find((p) => p.isHost);
+		const entry = {
+			code: this.roomCode,
+			hostName: host?.name ?? "?",
+			players: this.players.size,
+			maxPlayers: 1 + this.settings.maxPlayers,
+			phase: this.phase,
+			hasPassword: this.roomPassword !== null,
+		};
+		this.dirStub()
+			.fetch("https://dir/upsert", {
+				method: "POST",
+				body: JSON.stringify({ type: "upsert", code: this.roomCode, entry }),
+			})
+			.catch(() => { /* directory unreachable — ignore */ });
+	}
+
+	private removeFromDirectory(): void {
+		this.lastDirPush = 0;
+		this.dirStub()
+			.fetch("https://dir/remove", {
+				method: "POST",
+				body: JSON.stringify({ type: "remove", code: this.roomCode }),
+			})
+			.catch(() => { /* ignore */ });
+	}
+
+	private handleRoomConfig(isPublic?: boolean, password?: string | null): void {		if (typeof isPublic === "boolean") this.isPublic = isPublic;
+		if (password !== undefined) {
+			const pw = String(password ?? "").trim();
+			this.roomPassword = pw.length > 0 ? pw.slice(0, 32) : null;
+		}
+		if (!this.isPublic) this.removeFromDirectory();
+		else this.pushToDirectory(true);
+		this.sync();
+	}
+
+	private sendChatHistory(conn: Connection) {
+		for (const c of this.chatLog) {
+			this.sendTo(conn, { type: "chat", from: "", name: c.name, text: c.text } satisfies OutgoingMessage);
+		}
 	}
 
 	private sendTo(conn: Connection, msg: OutgoingMessage) {
@@ -226,7 +295,7 @@ export class Globe extends Server {
 
 		switch (msg.type) {
 			case "hello":
-				this.handleHello(msg.name, msg.previousId, conn);
+				this.handleHello(msg.name, msg.previousId, msg.password, conn);
 				break;
 			case "settings":
 				this.handleSettings(msg.settings, conn);
@@ -286,8 +355,54 @@ export class Globe extends Server {
 				}
 				break;
 			case "ping":
-				break; // keepalive � nothing to answer
+				break; // keepalive — nothing to answer
+			case "room-config":
+				if (this.isHostConn(conn)) {
+					this.handleRoomConfig(msg.isPublic, msg.password);
+				}
+				break;
+			case "unanswer":
+				this.handleUnanswer(conn);
+				break;
+			case "chat":
+				this.handleChat(String(msg.text ?? ""), conn);
+				break;
 		}
+	}
+
+	private handleUnanswer(conn: Connection) {
+		if (this.phase !== "guessing") return;
+		const player = this.playerByConn(conn);
+		if (!player || player.guess === null) return;
+		player.guess = null;
+		player.guessedAt = null;
+		this.sync();
+	}
+
+	private handleChat(rawText: string, conn: Connection) {
+		const player = this.playerByConn(conn);
+		if (!player) return;
+		const text = String(rawText).trim().slice(0, 200);
+		if (!text) return;
+
+		// Light flood control per player
+		const now = Date.now();
+		const last = this.lastChatByPlayer.get(player.id) ?? 0;
+		if (now - last < 500) return;
+		this.lastChatByPlayer.set(player.id, now);
+
+		const blocked = validateChatText(text);
+		if (blocked) {
+			this.sendError(conn, blocked);
+			return;
+		}
+
+		const out = { type: "chat", from: player.id, name: player.name, text } satisfies OutgoingMessage;
+		this.chatLog.push({ name: player.name, text });
+		if (this.chatLog.length > 50) this.chatLog.shift();
+		try {
+			this.broadcast(JSON.stringify(out));
+		} catch { /* ignore */ }
 	}
 
 	private handleKick(targetId: string) {
@@ -307,6 +422,7 @@ export class Globe extends Server {
 			this.pendingRemoval.delete(targetId);
 		}
 		this.players.delete(targetId);
+		if (this.players.size === 0) this.removeFromDirectory();
 		this.sync();
 	}
 
@@ -322,7 +438,15 @@ export class Globe extends Server {
 
 	// ------------------------------------------------------------------ join
 
-	private handleHello(rawName: string, previousId: string | undefined, conn: Connection) {
+	private handleHello(
+		rawName: string,
+		previousId: string | undefined,
+		password: string | undefined,
+		conn: Connection,
+	) {
+		// Ignore duplicate hellos on an already-bound connection
+		if (this.connToPlayer.has(conn.id)) return;
+
 		// Guest accounts — any name that passes the filter
 		const nameError = validateGuestName(String(rawName ?? ""));
 		if (nameError) {
@@ -347,13 +471,23 @@ export class Globe extends Server {
 			player.connected = true;
 			this.connToPlayer.set(conn.id, player.id);
 			this.sendTo(conn, { type: "welcome", playerId: player.id } satisfies OutgoingMessage);
+			this.sendChatHistory(conn);
 			this.sync();
 			return;
 		}
 
-		// Fresh guest — enforce capacity (host + MAX_PLAYERS guests)
-		if (this.players.size >= 1 + MAX_PLAYERS) {
-			this.sendError(conn, `Room is full (${MAX_PLAYERS} players max).`);
+		// Password gate for new joiners
+		if (this.roomPassword !== null && String(password ?? "") !== this.roomPassword) {
+			this.sendError(conn, "This room needs a password.");
+			try {
+				conn.close(4006, "bad-password");
+			} catch { /* ignore */ }
+			return;
+		}
+
+		// Fresh guest — enforce host-chosen capacity (host + maxPlayers guests)
+		if (this.players.size >= 1 + this.settings.maxPlayers) {
+			this.sendError(conn, `Room is full (${this.settings.maxPlayers} players max).`);
 			try {
 				conn.close(4004, "full");
 			} catch { /* ignore */ }
@@ -382,6 +516,7 @@ export class Globe extends Server {
 		this.players.set(player.id, player);
 		this.connToPlayer.set(conn.id, player.id);
 		this.sendTo(conn, { type: "welcome", playerId: player.id } satisfies OutgoingMessage);
+			this.sendChatHistory(conn);
 		this.sync();
 	}
 
@@ -418,6 +553,7 @@ export class Globe extends Server {
 				const heir = this.connectedPlayers()[0] ?? [...this.players.values()][0];
 				if (heir) heir.isHost = true;
 			}
+			if (this.players.size === 0) this.removeFromDirectory();
 			this.sync();
 		}, 5000);
 		this.pendingRemoval.set(pid, t);
@@ -450,6 +586,8 @@ export class Globe extends Server {
 			s.hintMode = partial.hintMode;
 		if (partial.earlyReveal !== undefined)
 			s.earlyReveal = Boolean(partial.earlyReveal);
+		if (partial.maxPlayers !== undefined)
+			s.maxPlayers = clamp(partial.maxPlayers, 1, MAX_PLAYERS, s.maxPlayers);
 		this.settings = s;
 		this.sync();
 	}
@@ -647,12 +785,13 @@ export class Globe extends Server {
 	private handleGuess(choiceId: string, conn: Connection) {
 		if (this.phase !== "guessing" || !this.currentRound) return;
 		const player = this.playerByConn(conn);
-		if (!player || player.guess !== null) return;
+		if (!player) return;
 		if (!this.currentRound.choices.some((c) => c.id === choiceId)) return;
-		player.guess = choiceId;
+		const wasNew = player.guess === null;
+		player.guess = choiceId; // switching answers is allowed until reveal
 		player.guessedAt = Date.now();
 		this.sync();
-		if (this.settings.earlyReveal && this.allGuessed()) this.finishRound();
+		if (this.settings.earlyReveal && wasNew && this.allGuessed()) this.finishRound();
 	}
 
 	private allGuessed(): boolean {
@@ -726,8 +865,60 @@ export class Globe extends Server {
 	}
 }
 
+// ---------------------------------------------------------------------------
+// RoomDirectory — a single global DO listing all public rooms
+// ---------------------------------------------------------------------------
+
+type DirEntry = {
+	code: string;
+	hostName: string;
+	players: number;
+	maxPlayers: number;
+	phase: Phase;
+	hasPassword: boolean;
+	ts: number;
+};
+
+export class RoomDirectory {
+	rooms = new Map<string, DirEntry>();
+
+	async fetch(request: Request): Promise<Response> {
+		const url = new URL(request.url);
+
+		if (request.method === "POST") {
+			const body = (await request.json()) as {
+				type: "upsert" | "remove";
+				code?: string;
+				entry?: Omit<DirEntry, "ts">;
+			};
+			if (body.type === "upsert" && body.code && body.entry) {
+				this.rooms.set(body.code, { ...body.entry, ts: Date.now() });
+			} else if (body.type === "remove" && body.code) {
+				this.rooms.delete(body.code);
+			}
+			return new Response("ok");
+		}
+
+		if (url.pathname.endsWith("/list")) {
+			const now = Date.now();
+			for (const [k, v] of this.rooms) {
+				if (now - v.ts > 86_400_000) this.rooms.delete(k); // prune stale >24h
+			}
+			const list = [...this.rooms.values()].sort((a, b) => b.players - a.players);
+			return Response.json(list);
+		}
+
+		return new Response("Not Found", { status: 404 });
+	}
+}
+
 export default {
 	async fetch(request: Request, env: Env): Promise<Response> {
+		const url = new URL(request.url);
+		if (url.pathname === "/api/rooms" && request.method === "GET") {
+			const stub = env.RoomDirectory.get(env.RoomDirectory.idFromName("global"));
+			return stub.fetch("https://dir/list");
+		}
 		return (
 			(await routePartykitRequest(request, { ...env })) ||
 			new Response("Not Found", { status: 404 })

@@ -16,6 +16,7 @@ export type GameSettings = {
 	speedBonus: number; // extra points for the fastest correct guess
 	autoNextSeconds: number; // 0 = host advances manually
 	earlyReveal: boolean; // end the round as soon as everyone answered
+	maxPlayers: number; // guest seats — chosen by the host (1–10)
 };
 
 export const DEFAULT_SETTINGS: GameSettings = {
@@ -30,7 +31,11 @@ export const DEFAULT_SETTINGS: GameSettings = {
 	speedBonus: 5,
 	autoNextSeconds: 12,
 	earlyReveal: false,
+	maxPlayers: 4,
 };
+
+/** Absolute ceiling for host-chosen room size. */
+export const MAX_PLAYERS = 10;
 
 export type PublicPlayer = {
 	id: string;
@@ -61,6 +66,8 @@ export type PublicState = {
 	players: PublicPlayer[];
 	settings: GameSettings;
 	roomCode: string;
+	isPublic: boolean;
+	hasPassword: boolean;
 	maxPlayers: number;
 
 	roundNumber: number;
@@ -89,7 +96,7 @@ export type PublicState = {
 };
 
 export type IncomingMessage =
-	| { type: "hello"; name: string; previousId?: string }
+	| { type: "hello"; name: string; previousId?: string; password?: string }
 	| { type: "settings"; settings: Partial<GameSettings> }
 	| { type: "start-round"; sentenceIndex?: number }
 	| { type: "quick-start" }
@@ -99,14 +106,17 @@ export type IncomingMessage =
 	| { type: "play-again" }
 	| { type: "reveal-now" }
 	| { type: "kick"; playerId: string }
-	| { type: "ping" };
+	| { type: "ping" }
+	| { type: "room-config"; isPublic?: boolean; password?: string | null }
+	| { type: "unanswer" }
+	| { type: "chat"; text: string };
 
 export type OutgoingMessage =
 	| { type: "state"; state: PublicState }
 	| { type: "welcome"; playerId: string }
-	| { type: "error"; message: string };
+	| { type: "error"; message: string }
+	| { type: "chat"; from: string; name: string; text: string };
 
-export const MAX_PLAYERS = 4;
 export const POINTS_EXACT = 10;
 export const POINTS_RELATED = 3;
 export const CHOICE_COUNT = 6;
@@ -151,6 +161,10 @@ const BLOCK_TOKENS = [
  * Returns null if the name is fine, otherwise a reason it was rejected.
  * Guests may call themselves anything except hard slurs and the worst words.
  */
+/**
+ * Returns null if the name is fine, otherwise a reason it was rejected.
+ * Guests may call themselves anything except hard slurs and the worst words.
+ */
 export function validateGuestName(raw: string): string | null {
 	const name = raw.trim().replace(/\s+/g, " ");
 	if (!name) return "Enter a name first.";
@@ -163,6 +177,24 @@ export function validateGuestName(raw: string): string | null {
 	}
 	for (const tok of tokensOf(norm)) {
 		if (BLOCK_TOKENS.includes(tok)) return "That name isn't allowed — pick another.";
+	}
+	return null;
+}
+
+/**
+ * Chat filter — same blocklists as names, but normal message length.
+ * Returns null if the text is fine.
+ */
+export function validateChatText(raw: string): string | null {
+	const text = String(raw ?? "").trim();
+	if (!text) return null;
+	if (text.length > 200) return "Keep messages under 200 characters.";
+	const norm = normalizeName(text);
+	for (const bad of BLOCK_SUBSTR) {
+		if (norm.includes(bad)) return "That message isn't allowed.";
+	}
+	for (const tok of tokensOf(norm)) {
+		if (BLOCK_TOKENS.includes(tok)) return "That message isn't allowed.";
 	}
 	return null;
 }

@@ -744,9 +744,78 @@ a { color: var(--accent-2); }
 	margin-bottom: 0.35rem;
 }
 
+/* ---------------------------------------------------------------- chat */
+
+.chat-panel {
+	position: fixed;
+	right: 16px;
+	bottom: 16px;
+	z-index: 30;
+	width: min(270px, calc(100vw - 32px));
+	padding: 0.7rem;
+	display: flex;
+	flex-direction: column;
+	gap: 0.5rem;
+}
+.chat-panel.closed { background: rgba(255,255,255,0.03); }
+.chat-toggle { align-self: flex-end; }
+.chat-log {
+	max-height: 200px;
+	overflow-y: auto;
+	display: flex;
+	flex-direction: column;
+	gap: 0.25rem;
+	font-size: 0.82rem;
+}
+.chat-log p { margin: 0; word-break: break-word; }
+.chat-log p.me b { color: var(--accent-2); }
+.chat-log p.hist { opacity: 0.55; font-style: italic; }
+.chat-form { display: flex; gap: 0.4rem; }
+.chat-form .input { padding: 0.45rem 0.6rem; font-size: 0.85rem; }
+
+.choice.selected {
+	border-color: var(--accent);
+	background: rgba(124, 92, 255, 0.22);
+	box-shadow: inset 0 0 0 1px var(--accent), 0 0 18px rgba(124, 92, 255, 0.35);
+}
+.choice.selected .choice-key { color: #fff; border-color: rgba(255,255,255,0.5); }
+
+@media (max-width: 720px) {
+	.chat-panel { right: 10px; bottom: 10px; }
+}
+
 @media print {
 	body { display: none !important; }
 }
+
+/* ---------------------------------------------------------------- room list & access */
+
+.roomlist { display: flex; flex-direction: column; gap: 0.45rem; text-align: left; }
+.roomlist-empty { color: var(--dim); font-size: 0.85rem; margin: 0; font-style: italic; }
+.roomlist-hint { color: var(--dim); font-size: 0.72rem; margin: 0.3rem 0 0; min-height: 1em; }
+
+.room-row {
+	display: flex;
+	align-items: center;
+	gap: 0.6rem;
+	background: rgba(255, 255, 255, 0.04);
+	border: 1px solid var(--card-border);
+	border-radius: 10px;
+	padding: 0.45rem 0.6rem;
+}
+.room-code {
+	font-family: "JetBrains Mono", ui-monospace, monospace;
+	font-weight: 800;
+	letter-spacing: 0.18em;
+	color: var(--accent-2);
+	min-width: 64px;
+}
+.room-meta { flex: 1; font-size: 0.78rem; color: var(--dim); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.room-phase.live { color: #ff8ad7; }
+.room-pw-input { flex: 1; padding: 0.35rem 0.6rem; }
+
+.pw-row { margin-top: 0.6rem; }
+.access-card h3 { font-size: 0.95rem; }
 
 /* ---------------------------------------------------------------- anti-copy */
 
@@ -758,15 +827,6 @@ input, textarea, select {
 	-webkit-user-select: text;
 	user-select: text;
 }
-
-.privacy-blur .round,
-.privacy-blur .lobby,
-.privacy-blur .home-card {
-	filter: blur(14px);
-	transition: filter 0.15s ease;
-	pointer-events: none;
-}
-.round, .lobby, .home-card { transition: filter 0.15s ease; }
 
 .unanimous-banner {
 	background: linear-gradient(135deg, rgba(139, 147, 167, 0.16), rgba(139, 147, 167, 0.08));

@@ -5,7 +5,7 @@ import { createRoot } from "react-dom/client";
 import usePartySocket from "partysocket/react";
 
 import { SENTENCES } from "../game/sentences";
-import { MAX_PLAYERS, validateGuestName } from "../shared";
+import { validateGuestName } from "../shared";
 import type {
 	GameSettings,
 	IncomingMessage,
@@ -75,11 +75,106 @@ const HINT_LABELS: Record<GameSettings["hintMode"], string> = {
 
 // --------------------------------------------------------------------------- Home
 
+type PublicRoom = {
+	code: string;
+	hostName: string;
+	players: number;
+	maxPlayers: number;
+	phase: PublicState["phase"];
+	hasPassword: boolean;
+};
+
+const PHASE_LABEL: Record<PublicRoom["phase"], string> = {
+	lobby: "waiting",
+	guessing: "live now",
+	reveal: "scoring",
+	matchover: "finishing up",
+};
+
+function RoomList({ onJoin, nameReady }: { onJoin: (code: string, pw?: string) => void; nameReady: boolean }) {
+	const [rooms, setRooms] = useState<PublicRoom[] | null>(null);
+	const [pwFor, setPwFor] = useState<string | null>(null);
+	const [pw, setPw] = useState("");
+
+	const load = useCallback(() => {
+		fetch("/api/rooms")
+			.then((r) => r.json())
+			.then((data: PublicRoom[]) => setRooms(data))
+			.catch(() => setRooms([]));
+	}, []);
+
+	useEffect(() => {
+		load();
+		const iv = setInterval(load, 10000);
+		return () => clearInterval(iv);
+	}, [load]);
+
+	if (rooms === null) return <p className="roomlist-empty">looking for open rooms…</p>;
+	if (rooms.length === 0)
+		return (
+			<div className="roomlist">
+				<p className="roomlist-empty">No public rooms right now — open one and tick “public”!</p>
+			</div>
+		);
+
+	return (
+		<div className="roomlist">
+			{rooms.map((r) => (
+				<div key={r.code} className="room-row">
+					{pwFor === r.code ? (
+						<>
+							<span className="room-code">🔒 {r.code}</span>
+							<input
+								className="input room-pw-input"
+								type="password"
+								placeholder="password"
+								autoFocus
+								value={pw}
+								onChange={(e) => setPw(e.target.value)}
+								onKeyDown={(e) =>
+									e.key === "Enter" && pw && (onJoin(r.code, pw), setPwFor(null), setPw(""))
+								}
+							/>
+							<button
+								className="btn btn-primary btn-sm"
+								disabled={!pw}
+								onClick={() => { onJoin(r.code, pw); setPwFor(null); setPw(""); }}
+							>
+								Join
+							</button>
+						</>
+					) : (
+						<>
+							<span className="room-code">{r.code}</span>
+							<span className="room-meta">
+								{r.hostName}'s room · {r.players}/{r.maxPlayers} ·{" "}
+								<b className={`room-phase ${r.phase === "lobby" ? "" : "live"}`}>
+									{PHASE_LABEL[r.phase]}
+								</b>
+							</span>
+							{r.hasPassword && <span title="password protected">🔒</span>}
+							<button
+								className="btn btn-secondary btn-sm"
+								onClick={() =>
+									r.hasPassword ? setPwFor(r.code) : onJoin(r.code)
+								}
+							>
+								J{r.hasPassword ? "oin 🔒" : "oin"}
+							</button>
+						</>
+					)}
+				</div>
+			))}
+			<p className="roomlist-hint">{nameReady ? "" : "Type your guest name above first."}</p>
+		</div>
+	);
+}
+
 function Home({
 	onEnter,
 	initialCode,
 }: {
-	onEnter: (name: string, code: string) => void;
+	onEnter: (name: string, code: string, password?: string) => void;
 	initialCode: string;
 }) {
 	const [name, setName] = useState(
@@ -153,12 +248,21 @@ function Home({
 
 				{error && <p className="form-error">⚠ {error}</p>}
 
+				<div className="divider"><span>public rooms</span></div>
+				<RoomList
+					nameReady={!!validateGuestName(name) === false && name.trim().length > 0}
+					onJoin={(code, pw) => {
+						if (!checkName()) return;
+						onEnter(name, code, pw);
+					}}
+				/>
+
 				<div className="rules-strip">
 					<span><i>10 pts</i> exact language</span>
 					<span><i>+ bonus</i> fastest correct</span>
 					<span><i>3 pts</i> closely related</span>
 					<span><i>all same pick</i> nobody scores</span>
-					<span><i>{MAX_PLAYERS}</i> players max</span>
+					<span><i>host</i> sets the room size</span>
 				</div>
 			</main>
 			<footer className="home-foot">multiplayer via PartyServer · translations live from the web</footer>
@@ -279,6 +383,18 @@ function SettingsPanel({
 						onChange={(e) => onChange({ speedBonus: Number(e.target.value) })}
 					/>
 					<Presets values={[0, 5, 10]} current={settings.speedBonus} onPick={(n) => onChange({ speedBonus: n })} />
+				</label>
+				<label>
+					<span>👥 Player slots</span>
+					<input
+						type="number"
+						min={1}
+						max={10}
+						disabled={!canEdit}
+						value={settings.maxPlayers}
+						onChange={(e) => onChange({ maxPlayers: Number(e.target.value) })}
+					/>
+					<Presets values={[2, 3, 4, 6, 8]} current={settings.maxPlayers} onPick={(n) => onChange({ maxPlayers: n })} />
 				</label>
 				<label>
 					<span>🧩 Answer choices</span>
@@ -430,10 +546,71 @@ function AutoNext({ seconds }: { seconds: number }) {
 	return <span className="auto-countdown">auto in {left}s</span>;
 }
 
+// --------------------------------------------------------------------------- chat
+
+type ChatMsg = { from: string; name: string; text: string };
+
+function ChatPanel({
+	messages,
+	myId,
+	onSend,
+	open,
+	onToggle,
+}: {
+	messages: ChatMsg[];
+	myId: string | null;
+	onSend: (text: string) => void;
+	open: boolean;
+	onToggle: () => void;
+}) {
+	const [text, setText] = useState("");
+	const logRef = useRef<HTMLDivElement>(null);
+	useEffect(() => {
+		logRef.current?.scrollTo(0, logRef.current.scrollHeight);
+	}, [messages.length, open]);
+	return (
+		<div className={`chat-panel card ${open ? "" : "closed"}`}>
+			<button className="chat-toggle btn btn-sm" onClick={onToggle}>
+				{open ? "💬 hide chat" : `💬 chat${messages.length ? ` (${messages.length})` : ""}`}
+			</button>
+			{open && (
+				<>
+					<div className="chat-log" ref={logRef}>
+						{messages.length === 0 && <p className="dim">Say something…</p>}
+						{messages.map((m, i) => (
+							<p key={i} className={m.from === myId ? "me" : m.from === "" ? "hist" : ""}>
+								<b>{m.name}</b> {m.text}
+							</p>
+						))}
+					</div>
+					<form
+						className="chat-form"
+						onSubmit={(e) => {
+							e.preventDefault();
+							const t = text.trim();
+							if (!t) return;
+							onSend(t);
+							setText("");
+						}}
+					>
+						<input
+							className="input"
+							placeholder="Message…"
+							maxLength={200}
+							value={text}
+							onChange={(e) => setText(e.target.value)}
+						/>
+						<button className="btn btn-primary btn-sm" type="submit">➤</button>
+					</form>
+				</>
+			)}
+		</div>
+	);
+}
+
 // --------------------------------------------------------------------------- bits
 
-function PlayerAvatar({ name }: { name: string }) {
-	const hue = [...name].reduce((h, c) => (h * 31 + c.charCodeAt(0)) % 360, 7);
+function PlayerAvatar({ name }: { name: string }) {	const hue = [...name].reduce((h, c) => (h * 31 + c.charCodeAt(0)) % 360, 7);
 	return (
 		<span className="avatar" style={{ background: `hsl(${hue} 60% 40%)` }}>
 			{name.charAt(0).toUpperCase()}
@@ -460,10 +637,12 @@ function ScoreStrip({ state, myId }: { state: PublicState; myId: string | null }
 function GameScreen({
 	room,
 	name,
+	password,
 	onLeave,
 }: {
 	room: string;
 	name: string;
+	password?: string;
 	onLeave: () => void;
 }) {
 	const [state, setState] = useState<PublicState | null>(null);
@@ -473,6 +652,9 @@ function GameScreen({
 	const [showPicker, setShowPicker] = useState(false);
 	const [copied, setCopied] = useState(false);
 	const [kicked, setKicked] = useState(false);
+	const [pwRetry, setPwRetry] = useState("");
+	const [chat, setChat] = useState<ChatMsg[]>([]);
+	const [chatOpen, setChatOpen] = useState(true);
 	const sentHello = useRef(false);
 
 	const socket = usePartySocket({
@@ -496,6 +678,9 @@ function GameScreen({
 					break;
 				case "error":
 					setError(msg.message);
+					break;
+				case "chat":
+					setChat((prev) => [...prev.slice(-99), { from: msg.from, name: msg.name, text: msg.text }]);
 					break;
 			}
 		},
@@ -529,8 +714,13 @@ function GameScreen({
 		try {
 			previousId = localStorage.getItem(idKey(room)) ?? undefined;
 		} catch { /* ignore */ }
-		send({ type: "hello", name, previousId });
-	}, [connected, name, room, send]);
+		send({
+			type: "hello",
+			name,
+			previousId,
+			...(password ? { password } : {}),
+		});
+	}, [connected, name, room, password, send]);
 
 	const you = state?.players.find((p) => p.id === myId) ?? null;
 	const isHost = !!you?.isHost;
@@ -542,7 +732,7 @@ function GameScreen({
 		return () => clearInterval(iv);
 	}, [connected, kicked, send]);
 
-	// Privacy: discourage screenshots, printing, devtools & text copying
+	// Privacy: discourage text copying & printing (no visual blurring)
 	useEffect(() => {
 		const prevent = (e: Event) => e.preventDefault();
 		const onKey = (e: KeyboardEvent) => {
@@ -558,40 +748,19 @@ function GameScreen({
 					.catch(() => {});
 			}
 		};
-		const blurOn = () => document.body.classList.add("privacy-blur");
-		const blurOff = () => document.body.classList.remove("privacy-blur");
-		const onVis = () => (document.hidden ? blurOn() : blurOff());
-		const checkDevtools = () => {
-			const open =
-				window.outerHeight - window.innerHeight > 160 ||
-				window.outerWidth - window.innerWidth > 160;
-			document.body.classList.toggle("privacy-blur", open && !document.hidden);
-		};
-		const dtIv = setInterval(checkDevtools, 2000);
 		document.addEventListener("contextmenu", prevent);
 		document.addEventListener("copy", prevent);
 		document.addEventListener("cut", prevent);
 		document.addEventListener("dragstart", prevent);
 		window.addEventListener("keydown", onKey);
 		window.addEventListener("keyup", onKeyUp);
-		window.addEventListener("blur", blurOn);
-		window.addEventListener("focus", blurOff);
-		window.addEventListener("resize", checkDevtools);
-		document.addEventListener("visibilitychange", onVis);
-		checkDevtools();
 		return () => {
-			clearInterval(dtIv);
 			document.removeEventListener("contextmenu", prevent);
 			document.removeEventListener("copy", prevent);
 			document.removeEventListener("cut", prevent);
 			document.removeEventListener("dragstart", prevent);
 			window.removeEventListener("keydown", onKey);
 			window.removeEventListener("keyup", onKeyUp);
-			window.removeEventListener("blur", blurOn);
-			window.removeEventListener("focus", blurOff);
-			window.removeEventListener("resize", checkDevtools);
-			document.removeEventListener("visibilitychange", onVis);
-			blurOff();
 		};
 	}, []);
 
@@ -618,11 +787,39 @@ function GameScreen({
 	}
 
 	if (error && !state) {
+		const needsPassword = /password/i.test(error);
 		return (
 			<div className="screen-center">
 				<div className="card error-card pop-in">
 					<p>⚠ {error}</p>
-					<button className="btn btn-primary" onClick={onLeave}>← Back home</button>
+					{needsPassword ? (
+						<>
+							<input
+								className="input"
+								type="password"
+								placeholder="Room password"
+								value={pwRetry}
+								onChange={(e) => setPwRetry(e.target.value)}
+								onKeyDown={(e) => e.key === "Enter" && pwRetry.trim() && send({ type: "hello", name })}
+							/>
+							<button
+								className="btn btn-primary"
+								disabled={!pwRetry.trim()}
+								onClick={() => {
+									setError(null);
+									send({
+										type: "hello",
+										name,
+										password: pwRetry.trim(),
+									});
+								}}
+							>
+								Join with password
+							</button>
+						</>
+					) : (
+						<button className="btn btn-primary" onClick={onLeave}>← Back home</button>
+					)}
 				</div>
 			</div>
 		);
@@ -668,6 +865,14 @@ function GameScreen({
 				<RoundView state={state} myId={myId} isHost={isHost} onSend={send} />
 			)}
 
+			<ChatPanel
+				messages={chat}
+				myId={myId}
+				onSend={(t) => send({ type: "chat", text: t })}
+				open={chatOpen}
+				onToggle={() => setChatOpen((o) => !o)}
+			/>
+
 			{showPicker && (
 				<SentencePicker
 					onStart={(i) => {
@@ -695,7 +900,8 @@ function LobbyView({
 	onPick: () => void;
 }) {
 	const guests = state.players.filter((p) => !p.isHost);
-	const slots = Math.max(MAX_PLAYERS, guests.length);
+	const seats = Math.max(state.settings.maxPlayers, guests.length);
+	const [pwDraft, setPwDraft] = useState("");
 
 	return (
 		<main className="lobby">
@@ -706,7 +912,7 @@ function LobbyView({
 						<span key={i} className="code-tile">{ch}</span>
 					))}
 				</div>
-				<p className="lobby-sub">Up to {MAX_PLAYERS} players · everyone guesses, even the host</p>
+				<p className="lobby-sub">Up to {state.settings.maxPlayers} players · everyone guesses, even the host</p>
 
 				{isHost ? (
 					<div className="host-actions">
@@ -732,10 +938,40 @@ function LobbyView({
 			</section>
 
 			<div className="lobby-right">
+				<section className="card access-card pop-in">
+					<h3>🌐 Room access</h3>
+					<label className="toggle">
+						<input
+							type="checkbox"
+							disabled={!isHost}
+							checked={state.isPublic}
+							onChange={(e) => onSend({ type: "room-config", isPublic: e.target.checked })}
+						/>
+						<span>List publicly <small>appears on the home screen for anyone</small></span>
+					</label>
+					{isHost ? (
+						<div className="join-row pw-row">
+							<input
+								className="input"
+								type="password"
+								maxLength={32}
+								placeholder={state.hasPassword ? "password set — type to change" : "set a password (optional)"}
+								value={pwDraft}
+								onChange={(e) => setPwDraft(e.target.value)}
+								onKeyDown={(e) => e.key === "Enter" && onSend({ type: "room-config", password: pwDraft.trim() })}
+							/>
+							<button className="btn btn-secondary btn-sm" onClick={() => onSend({ type: "room-config", password: pwDraft.trim() })}>
+								Set
+							</button>
+						</div>
+					) : (
+						<p className="dim">{state.hasPassword ? "🔒 password protected" : "no password"}</p>
+					)}
+				</section>
 				<section className="card players-card pop-in">
-					<h3>Players <span className="dim">{state.players.length}/{MAX_PLAYERS + 1}</span></h3>
+					<h3>Players <span className="dim">{state.players.length}/{state.settings.maxPlayers + 1}</span></h3>
 					<PlayerRow p={state.players.find((p) => p.isHost) ?? null} kind="host" />
-					{Array.from({ length: slots }, (_, i) => {
+					{Array.from({ length: seats }, (_, i) => {
 						const guest = guests[i] ?? null;
 						return (
 							<PlayerRow
@@ -860,24 +1096,30 @@ function RoundView({
 	const totalMs = Math.max(1, state.settings.roundSeconds * 1000);
 	const you = state.players.find((p) => p.id === myId) ?? null;
 	const locked = !!you?.guessed;
+	const [picked, setPicked] = useState<string | null>(null);
+
+	// Reset the local pick when a new round starts
+	useEffect(() => {
+		setPicked(null);
+	}, [state.roundNumber]);
 
 	useEffect(() => {
-		if (state.phase !== "guessing" || locked) return;
+		if (state.phase !== "guessing") return;
 		const handler = (e: KeyboardEvent) => {
 			const n = Number(e.key);
 			if (n >= 1 && n <= 9 && state.choices?.[n - 1]) {
+				setPicked(state.choices[n - 1].id);
 				onSend({ type: "guess", choiceId: state.choices[n - 1].id });
 			}
 		};
 		window.addEventListener("keydown", handler);
 		return () => window.removeEventListener("keydown", handler);
-	}, [state.phase, state.choices, locked, onSend]);
+	}, [state.phase, state.choices, onSend]);
 
 	if (state.phase === "guessing" && state.obfuscatedText && state.choices) {
 		const secsLeft = remainingMs !== null ? Math.ceil(remainingMs / 1000) : 0;
 		const pct = remainingMs !== null ? Math.max(0, Math.min(100, (remainingMs / totalMs) * 100)) : 0;
 		const urgent = secsLeft <= 10;
-		const answered = state.players.filter((p) => p.guessed).length;
 
 		return (
 			<main className="round pop-in">
@@ -896,8 +1138,19 @@ function RoundView({
 				<section className="card puzzle-card">
 					<div className="puzzle-head">
 						<span className="chip">What language is this?</span>
-						{locked && (
-							<span className="chip chip-good">🔒 Locked in — {answered}/{state.players.length} answered</span>
+						{picked && (
+							<>
+								<span className="chip chip-good">✓ answer in — change anytime</span>
+								<button
+									className="btn btn-ghost btn-sm"
+									onClick={() => {
+										setPicked(null);
+										onSend({ type: "unanswer" });
+									}}
+								>
+									✕ uncheck
+								</button>
+							</>
 						)}
 						<HintSwitch state={state} isHost={isHost} onSend={onSend} />
 					</div>
@@ -908,9 +1161,11 @@ function RoundView({
 					{state.choices.map((c, i) => (
 						<button
 							key={c.id}
-							className={`choice ${locked ? "choice-locked" : ""}`}
-							disabled={locked}
-							onClick={() => onSend({ type: "guess", choiceId: c.id })}
+							className={`choice ${picked === c.id ? "selected" : ""}`}
+							onClick={() => {
+								setPicked(c.id);
+								onSend({ type: "guess", choiceId: c.id });
+							}}
 						>
 							<span className="choice-key">{i + 1}</span>
 							<span className="choice-flag">{c.flag}</span>
@@ -1073,7 +1328,7 @@ function RoundView({
 // --------------------------------------------------------------------------- App
 
 function App() {
-	const [session, setSession] = useState<{ room: string; name: string } | null>(() => {
+	const [session, setSession] = useState<{ room: string; name: string; password?: string } | null>(() => {
 		const params = new URLSearchParams(location.search);
 		const code = params.get("room")?.toUpperCase();
 		if (!code) return null;
@@ -1090,9 +1345,13 @@ function App() {
 		return new URLSearchParams(location.search).get("room")?.toUpperCase() ?? "";
 	}, []);
 
-	const enter = (name: string, code: string) => {
+	const enter = (name: string, code: string, password?: string) => {
 		history.replaceState(null, "", `/?room=${encodeURIComponent(code)}`);
-		setSession({ room: code.toUpperCase(), name: name.trim().replace(/\s+/g, " ") });
+		setSession({
+			room: code.toUpperCase(),
+			name: name.trim().replace(/\s+/g, " "),
+			...(password ? { password } : {}),
+		});
 	};
 
 	const leave = () => {
@@ -1101,7 +1360,13 @@ function App() {
 	};
 
 	return session ? (
-		<GameScreen key={session.room} room={session.room} name={session.name} onLeave={leave} />
+		<GameScreen
+			key={session.room}
+			room={session.room}
+			name={session.name}
+			password={session.password}
+			onLeave={leave}
+		/>
 	) : (
 		<Home onEnter={enter} initialCode={initialCode} />
 	);

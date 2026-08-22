@@ -3,11 +3,12 @@
 // Runtime types generated with workerd@1.20260811.1 2025-10-08 
 interface __BaseEnv_Env {
 	Globe: DurableObjectNamespace<import("./index").Globe>;
+	RoomDirectory: DurableObjectNamespace<import("./index").RoomDirectory>;
 }
 declare namespace Cloudflare {
 	interface GlobalProps {
 		mainModule: typeof import("./index");
-		durableNamespaces: "Globe";
+		durableNamespaces: "Globe" | "RoomDirectory";
 	}
 	interface Env extends __BaseEnv_Env {}
 }
