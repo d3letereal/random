@@ -817,6 +817,9 @@ a { color: var(--accent-2); }
 
 .pw-row { margin-top: 0.6rem; }
 .access-card h3 { font-size: 0.95rem; }
+.close-room-btn { margin-top: 0.6rem; color: var(--danger); align-self: flex-start; }
+.close-room-btn:hover { background: rgba(255, 93, 125, 0.15); color: #fff; border-color: var(--danger); }
+.access-card .toggle { margin-bottom: 0.4rem; }
 
 /* ---------------------------------------------------------------- anti-copy */
 

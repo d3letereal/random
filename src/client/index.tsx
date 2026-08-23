@@ -656,6 +656,7 @@ function GameScreen({
 	const [showPicker, setShowPicker] = useState(false);
 	const [copied, setCopied] = useState(false);
 	const [kicked, setKicked] = useState(false);
+	const [roomClosed, setRoomClosed] = useState(false);
 	const [pwRetry, setPwRetry] = useState("");
 	const [chat, setChat] = useState<ChatMsg[]>([]);
 	const [chatOpen, setChatOpen] = useState(true);
@@ -704,10 +705,11 @@ function GameScreen({
 		};
 	}, [socket]);
 
-	// Detect host kicks (server closes with 4005)
+	// Detect host kicks (4005) and room closure (4009)
 	useEffect(() => {
 		const h = (e: CloseEvent) => {
 			if (e.code === 4005) setKicked(true);
+			if (e.code === 4009) setRoomClosed(true);
 		};
 		socket.addEventListener("close", h as EventListener);
 		return () => socket.removeEventListener("close", h as EventListener);
@@ -792,6 +794,17 @@ function GameScreen({
 			() => { /* clipboard unavailable */ },
 		);
 	};
+
+	if (roomClosed) {
+		return (
+			<div className="screen-center">
+				<div className="card error-card pop-in">
+					<p>🚪 The host closed this room.</p>
+					<button className="btn btn-primary" onClick={onLeave}>← Back home</button>
+				</div>
+			</div>
+		);
+	}
 
 	if (kicked) {
 		return (
@@ -984,6 +997,11 @@ function LobbyView({
 						</div>
 					) : (
 						<p className="dim">{state.hasPassword ? "🔒 password protected" : "no password"}</p>
+					)}
+					{isHost && (
+						<button className="btn btn-ghost btn-sm close-room-btn" onClick={() => onSend({ type: "close-room" })}>
+							🗑️ Close this room
+						</button>
 					)}
 				</section>
 				<section className="card players-card pop-in">
@@ -1206,6 +1224,9 @@ function RoundView({
 						<button className="btn btn-secondary" onClick={() => onSend({ type: "reveal-now" })}>
 							⏭️ Reveal now
 						</button>
+						<button className="btn btn-ghost" onClick={() => onSend({ type: "end-match" })}>
+							🏁 End match
+						</button>
 						{!state.settings.earlyReveal && (
 							<span className="auto-countdown">answers lock instantly — reveal waits for the timer</span>
 						)}
@@ -1317,6 +1338,9 @@ function RoundView({
 							</button>
 							<button className="btn btn-secondary" onClick={() => onSend({ type: "quick-start" })}>
 								⚡ Skip to random
+							</button>
+							<button className="btn btn-ghost" onClick={() => onSend({ type: "end-match" })}>
+								🏁 End match
 							</button>
 						</>
 					) : (

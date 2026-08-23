@@ -86,6 +86,8 @@ export class Globe extends Server {
 	currentRound: Round | null = null;
 	usedSentences = new Set<number>();
 	usedLangIds = new Set<string>(); // never repeat a language until pool exhausted
+	langFails = new Map<string, number>(); // consecutive translation failures
+	lastLangFail = new Map<string, number>();
 	pendingRemoval = new Map<string, ReturnType<typeof setTimeout>>();
 	private token = 0;
 	private timer: ReturnType<typeof setTimeout> | null = null;
@@ -329,7 +331,13 @@ export class Globe extends Server {
 				p.guessedAt = null;
 					}
 					this.usedSentences.clear();
+					this.usedLangIds.clear();
 					this.sync();
+				}
+				break;
+			case "close-room":
+				if (this.isHostConn(conn)) {
+					this.closeRoom();
 				}
 				break;
 			case "play-again":
@@ -446,6 +454,25 @@ export class Globe extends Server {
 		try {
 			this.broadcast(JSON.stringify(out));
 		} catch { /* ignore */ }
+	}
+
+	/** Host shuts the room down — everyone is disconnected and it delists. */
+	private closeRoom() {
+		this.clearTimer();
+		for (const t of this.pendingRemoval.values()) clearTimeout(t);
+		this.pendingRemoval.clear();
+		for (const c of this.getConnections()) {
+			try {
+				c.close(4009, "room-closed");
+			} catch { /* ignore */ }
+		}
+		this.connToPlayer.clear();
+		this.players.clear();
+		this.currentRound = null;
+		this.roundNumber = 0;
+		this.phase = "lobby";
+		this.isPublic = false;
+		this.removeFromDirectory();
 	}
 
 	private handleKick(targetId: string) {
@@ -717,14 +744,25 @@ export class Globe extends Server {
 		let chosenId: string | null = null;
 		let wasPhrasebook = false;
 
-		// Never repeat a language until the whole pool has been used once
-		let rollPool = pool.filter((l) => !this.usedLangIds.has(l.id));
+		// Never repeat a language until the whole pool has been used once,
+		// and skip languages whose translations keep failing (5 min cooldown)
+		const healthy = (l: import("../game/languages").LangDef) => {
+			const fails = this.langFails.get(l.id) ?? 0;
+			if (fails < 3) return true;
+			const lastFail = this.lastLangFail.get(l.id) ?? 0;
+			return Date.now() - lastFail > 300_000;
+		};
+		let rollPool = pool.filter(
+			(l) => !this.usedLangIds.has(l.id) && healthy(l),
+		);
+		if (rollPool.length === 0)
+			rollPool = pool.filter((l) => !this.usedLangIds.has(l.id));
 		if (rollPool.length === 0) {
 			this.usedLangIds.clear();
 			rollPool = pool;
 		}
 
-		for (let attempt = 0; attempt < 4; attempt++) {
+		for (let attempt = 0; attempt < 6; attempt++) {
 			const lang = randomOf(rollPool);
 			if (lang.category === "fake") {
 				chosenId = lang.id;
@@ -761,8 +799,11 @@ export class Globe extends Server {
 				chosenId = lang.id;
 				sentence = sentenceEn;
 				wasPhrasebook = false;
+				this.langFails.delete(lang.id);
 				break;
 			}
+			this.langFails.set(lang.id, (this.langFails.get(lang.id) ?? 0) + 1);
+			this.lastLangFail.set(lang.id, Date.now());
 			console.warn(`[polygloss] translation failed for ${lang.id} (attempt ${attempt + 1})`);
 		}
 

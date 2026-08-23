@@ -110,7 +110,8 @@ export type IncomingMessage =
 	| { type: "room-config"; isPublic?: boolean; password?: string | null }
 	| { type: "unanswer" }
 	| { type: "chat"; text: string }
-	| { type: "leave" };
+	| { type: "leave" }
+	| { type: "close-room" };
 
 export type OutgoingMessage =
 	| { type: "state"; state: PublicState }

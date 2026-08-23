@@ -333,9 +333,10 @@ export function groupOf(id: string): string | undefined {
 // ---------------------------------------------------------------------------
 
 const translationCache = new Map<string, string>();
+const failedAt = new Map<string, number>(); // negative cache — skip recent failures
 
 async function fetchJson(url: string): Promise<unknown> {
-	const res = await fetch(url, { signal: AbortSignal.timeout(6000) });
+	const res = await fetch(url, { signal: AbortSignal.timeout(8000) });
 	if (!res.ok) throw new Error(`HTTP ${res.status}`);
 	return res.json();
 }
@@ -345,34 +346,58 @@ export async function translateText(text: string, targetCode: string): Promise<s
 	const cached = translationCache.get(key);
 	if (cached !== undefined) return cached;
 
-	// Primary: Google translate gtx endpoint
-	try {
-		const url =
-			`https://translate.googleapis.com/translate_a/single?client=gtx&sl=en&tl=${encodeURIComponent(targetCode)}&dt=t&q=${encodeURIComponent(text)}`;
-		const data = (await fetchJson(url)) as [[[string, string]]];
-		const joined = data?.[0]?.map((seg) => seg?.[0] ?? "").join("") ?? "";
-		if (joined.trim()) {
-			translationCache.set(key, joined);
-			return joined;
+	// Recently failed? Give it a rest for 30s so rounds don't stall on it
+	const failed = failedAt.get(key);
+	if (failed !== undefined && Date.now() - failed < 30_000) return null;
+
+	const q = encodeURIComponent(text);
+	const c = encodeURIComponent(targetCode);
+
+	// Three independent endpoints — whichever responds wins
+	const attempts: Array<() => Promise<string | null>> = [
+		async () => {
+			// Google gtx
+			const data = (await fetchJson(
+				`https://translate.googleapis.com/translate_a/single?client=gtx&sl=en&tl=${c}&dt=t&q=${q}`,
+			)) as [[[string, string]]];
+			const joined = data?.[0]?.map((seg) => seg?.[0] ?? "").join("") ?? "";
+			return joined.trim() ? joined : null;
+		},
+		async () => {
+			// Google dict-chrome-ex mirror
+			const data = (await fetchJson(
+				`https://clients5.google.com/translate_a/t?client=dict-chrome-ex&sl=en&tl=${c}&q=${q}`,
+			)) as [string];
+			const t = data?.[0];
+			return typeof t === "string" && t.trim() ? t : null;
+		},
+		async () => {
+			// MyMemory fallback
+			const data = (await fetchJson(
+				`https://api.mymemory.translated.net/get?q=${q}&langpair=en|${c}`,
+			)) as { responseData?: { translatedText?: string } };
+			const t = data?.responseData?.translatedText;
+			if (typeof t === "string" && t.trim() && !t.includes("MYMEMORY WARNING") && !t.includes("QUERY LENGTH LIMIT")) {
+				return t;
+			}
+			return null;
+		},
+	];
+
+	for (const attempt of attempts) {
+		try {
+			const result = await attempt();
+			if (result) {
+				failedAt.delete(key);
+				translationCache.set(key, result);
+				return result;
+			}
+		} catch {
+			/* try next endpoint */
 		}
-	} catch {
-		/* fall through */
 	}
 
-	// Fallback: MyMemory
-	try {
-		const url =
-			`https://api.mymemory.translated.net/get?q=${encodeURIComponent(text)}&langpair=en|${encodeURIComponent(targetCode)}`;
-		const data = (await fetchJson(url)) as { responseData?: { translatedText?: string } };
-		const t = data?.responseData?.translatedText;
-		if (typeof t === "string" && t.trim() && !t.includes("MYMEMORY WARNING") && !t.includes("QUERY LENGTH LIMIT")) {
-			translationCache.set(key, t);
-			return t;
-		}
-	} catch {
-		/* fall through */
-	}
-
+	failedAt.set(key, Date.now());
 	return null;
 }
 
