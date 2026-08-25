@@ -666,6 +666,8 @@ function GameScreen({
 	const [pwRetry, setPwRetry] = useState("");
 	const [chat, setChat] = useState<ChatMsg[]>([]);
 	const [chatOpen, setChatOpen] = useState(true);
+	const [debugEmail, setDebugEmail] = useState<string | null>(null);
+	const [debugMessage, setDebugMessage] = useState<{ text: string; nonce: number } | null>(null);
 	const sentHello = useRef(false);
 
 	const socket = usePartySocket({
@@ -693,6 +695,12 @@ function GameScreen({
 					break;
 				case "chat":
 					setChat((prev) => [...prev.slice(-99), { from: msg.from, name: msg.name, text: msg.text }]);
+					break;
+				case "debug-status":
+					setDebugEmail(msg.email);
+					break;
+				case "debug-screen-message":
+					setDebugMessage({ text: msg.text, nonce: Date.now() });
 					break;
 			}
 		},
@@ -757,6 +765,12 @@ function GameScreen({
 		const iv = setInterval(() => send({ type: "ping" }), 25000);
 		return () => clearInterval(iv);
 	}, [connected, kicked, send]);
+
+	useEffect(() => {
+		if (!debugMessage) return;
+		const timeout = window.setTimeout(() => setDebugMessage(null), 8000);
+		return () => window.clearTimeout(timeout);
+	}, [debugMessage]);
 
 	// Privacy: discourage text copying & printing (no visual blurring)
 	useEffect(() => {
@@ -888,6 +902,11 @@ function GameScreen({
 			{error && (
 				<div className="toast-error" onAnimationEnd={() => setError(null)}>⚠ {error}</div>
 			)}
+			{debugMessage && (
+				<div className="debug-screen-message" key={debugMessage.nonce} role="alert">
+					{debugMessage.text}
+				</div>
+			)}
 
 			<header className="topbar">
 				<Logo small />
@@ -914,6 +933,10 @@ function GameScreen({
 				onToggle={() => setChatOpen((o) => !o)}
 			/>
 
+			{debugEmail && (
+				<DebugPanel state={state} email={debugEmail} onSend={send} />
+			)}
+
 			{showPicker && (
 				<SentencePicker
 					onStart={(i) => {
@@ -924,6 +947,74 @@ function GameScreen({
 				/>
 			)}
 		</div>
+	);
+}
+
+function DebugPanel({
+	state,
+	email,
+	onSend,
+}: {
+	state: PublicState;
+	email: string;
+	onSend: (message: IncomingMessage) => void;
+}) {
+	const [open, setOpen] = useState(false);
+	const [screenText, setScreenText] = useState("");
+	const [answerOverrides, setAnswerOverrides] = useState<Record<string, string>>({});
+	const choices = state.choices;
+	return (
+		<aside className={`debug-panel card ${open ? "open" : "closed"}`}>
+			<button className="btn btn-danger btn-sm debug-toggle" onClick={() => setOpen((value) => !value)}>
+				🧪 {open ? "Close dev menu" : "Dev menu"}
+			</button>
+			{open && (
+				<>
+					<p className="debug-identity">Access verified: {email}</p>
+					<h3>Change player answers</h3>
+					{state.phase !== "guessing" || !choices ? (
+						<p className="debug-hint">Start a round to override answers.</p>
+					) : (
+						<div className="debug-player-list">
+							{state.players.map((player) => (
+								<label key={player.id}>
+									<span>{player.name}</span>
+									<select
+										className="input"
+										value={answerOverrides[player.id] ?? ""}
+										onChange={(event) => {
+											const choiceId = event.target.value;
+											setAnswerOverrides((current) => ({ ...current, [player.id]: choiceId }));
+											onSend({
+												type: "debug-set-answer",
+												playerId: player.id,
+												choiceId: choiceId || null,
+											});
+										}}
+									>
+										<option value="">No answer</option>
+										{choices.map((choice) => (
+											<option key={choice.id} value={choice.id}>{choice.flag} {choice.label}</option>
+										))}
+									</select>
+								</label>
+							))}
+						</div>
+					)}
+					<h3>Put text on every screen</h3>
+					<form onSubmit={(event) => {
+						event.preventDefault();
+						const text = screenText.trim();
+						if (!text) return;
+						onSend({ type: "debug-screen-message", text });
+						setScreenText("");
+					}}>
+						<input className="input" maxLength={240} value={screenText} onChange={(event) => setScreenText(event.target.value)} placeholder="A dramatic announcement…" />
+						<button className="btn btn-danger btn-sm" disabled={!screenText.trim()}>Broadcast</button>
+					</form>
+				</>
+			)}
+		</aside>
 	);
 }
 
