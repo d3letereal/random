@@ -666,7 +666,6 @@ function GameScreen({
 	const [pwRetry, setPwRetry] = useState("");
 	const [chat, setChat] = useState<ChatMsg[]>([]);
 	const [chatOpen, setChatOpen] = useState(true);
-	const [debugEmail, setDebugEmail] = useState<string | null>(null);
 	const [debugUnlocked, setDebugUnlocked] = useState(false);
 	const [debugAnswers, setDebugAnswers] = useState<Record<string, string | null>>({});
 	const [debugMessage, setDebugMessage] = useState<{ text: string; nonce: number } | null>(null);
@@ -699,7 +698,7 @@ function GameScreen({
 					setChat((prev) => [...prev.slice(-99), { from: msg.from, name: msg.name, text: msg.text }]);
 					break;
 				case "debug-status":
-					setDebugEmail(msg.email);
+					setDebugUnlocked(true);
 					break;
 				case "debug-answers":
 					setDebugAnswers(msg.answers);
@@ -777,19 +776,17 @@ function GameScreen({
 		return () => window.clearTimeout(timeout);
 	}, [debugMessage]);
 
-	// Deliberately session-only: refresh removes the function and closes the
-	// panel. It is installed only after the server verifies developer access.
+	// Deliberately session-only: refresh removes the function and closes the panel.
 	useEffect(() => {
-		if (!debugEmail) return;
 		const devWindow = window as Window & { markodev?: () => string };
 		devWindow.markodev = () => {
-			setDebugUnlocked(true);
-			return "Developer menu opened";
+			send({ type: "debug-enable" });
+			return "Developer menu requested";
 		};
 		return () => {
 			delete devWindow.markodev;
 		};
-	}, [debugEmail]);
+	}, [send]);
 
 	// Privacy: discourage text copying & printing (no visual blurring)
 	useEffect(() => {
@@ -952,10 +949,9 @@ function GameScreen({
 				onToggle={() => setChatOpen((o) => !o)}
 			/>
 
-			{debugEmail && debugUnlocked && (
+			{debugUnlocked && (
 				<DebugPanel
 					state={state}
-					email={debugEmail}
 					answers={debugAnswers}
 					onSend={send}
 					onClose={() => setDebugUnlocked(false)}
@@ -976,13 +972,11 @@ function GameScreen({
 }
 function DebugPanel({
 	state,
-	email,
 	answers,
 	onSend,
 	onClose,
 }: {
 	state: PublicState;
-	email: string;
 	answers: Record<string, string | null>;
 	onSend: (message: IncomingMessage) => void;
 	onClose: () => void;
@@ -996,7 +990,6 @@ function DebugPanel({
 				🧪 Close dev menu
 			</button>
 			<>
-				<p className="debug-identity">Access verified: {email}</p>
 				<h3>Change player answers</h3>
 				{state.phase !== "guessing" || !choices ? (
 					<p className="debug-hint">Start a round to override answers.</p>

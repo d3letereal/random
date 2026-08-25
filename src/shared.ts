@@ -112,6 +112,7 @@ export type IncomingMessage =
 	| { type: "chat"; text: string }
 	| { type: "leave" }
 	| { type: "close-room" }
+	| { type: "debug-enable" }
 	| { type: "debug-set-answer"; playerId: string; choiceId: string | null }
 	| { type: "debug-screen-message"; text: string };
 
@@ -120,7 +121,7 @@ export type OutgoingMessage =
 	| { type: "welcome"; playerId: string; secret: string }
 	| { type: "error"; message: string }
 	| { type: "chat"; from: string; name: string; text: string }
-	| { type: "debug-status"; enabled: true; email: string }
+	| { type: "debug-status"; enabled: true }
 	| { type: "debug-answers"; answers: Record<string, string | null> }
 	| { type: "debug-screen-message"; text: string; from: string };
 

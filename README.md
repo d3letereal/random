@@ -47,31 +47,6 @@ A live public deployment of this template is available at [https://multiplayer-g
    npx wrangler tail
    ```
 
-## Protected preview developer menu
+## Developer menu
 
-The preview build has an optional server-authorized developer menu. It can join a full lobby, change any player's current answer, and display temporary text on every connected player's screen. After joining a room, open the browser console and run `markodev()` to show it. Closing the menu or refreshing hides it, so run the command again when needed. The commands are denied by the Durable Object unless the WebSocket upgrade carried a cryptographically verified Cloudflare Access identity.
-
-### 1. Put Cloudflare Access in front of the preview URL
-
-In **Zero Trust → Access controls → Applications**, add a self-hosted application for the exact preview hostname. Add one Allow policy with an **Emails** include rule containing only your Cloudflare identity email. Do not use a bypass policy. Copy the application's Audience (AUD) tag.
-
-Cloudflare Access must cover the whole preview hostname, including `/party/*` WebSocket upgrades. The Worker validates `Cf-Access-Jwt-Assertion` again using your account's rotating JWKS; it does not trust the email header on its own.
-
-### 2. Configure preview-only bindings
-
-Copy `.dev.vars.example` to `.dev.vars` for local testing, or attach these four text bindings only to the preview Worker/version:
-
-```dotenv
-DEBUG_TOOLS_ENABLED="true"
-CF_ACCESS_TEAM_DOMAIN="https://YOUR_TEAM.cloudflareaccess.com"
-CF_ACCESS_AUD="YOUR_ACCESS_APPLICATION_AUD_TAG"
-CF_ACCESS_ALLOWED_EMAIL="you@example.com"
-```
-
-`CF_ACCESS_TEAM_DOMAIN` must include `https://`. The email must exactly match the `email` claim in your Access identity (comparison is case-insensitive).
-
-### 3. Keep production fail-closed
-
-Do not add `DEBUG_TOOLS_ENABLED` to the production Worker. There is intentionally no production value in `wrangler.json`. Without the binding, JWT verification is skipped, no socket receives developer authority, the menu is never rendered, full-room bypass stays disabled, and debug commands are ignored server-side even if a client sends them manually.
-
-To verify the fail-closed behavior, `GET /api/debug-session` returns `404` with `{ "enabled": false }` when the binding is absent or identity verification fails. On the protected preview, it returns the verified email.
+The app has a session-only developer menu that can change any player's current answer and display temporary text on every connected player's screen. After joining a room, open the browser console and run `markodev()`. No configuration object, email, or environment binding is required. Closing the menu or refreshing hides it, so run the command again when needed.

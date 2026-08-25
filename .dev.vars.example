@@ -1,6 +1,1 @@
-# Local/preview debug authentication. Copy to .dev.vars (which is gitignored).
-# Production must not define DEBUG_TOOLS_ENABLED.
-DEBUG_TOOLS_ENABLED="true"
-CF_ACCESS_TEAM_DOMAIN="https://YOUR_TEAM.cloudflareaccess.com"
-CF_ACCESS_AUD="YOUR_ACCESS_APPLICATION_AUD_TAG"
-CF_ACCESS_ALLOWED_EMAIL="you@example.com"
+# Add local Worker secrets here when the project needs them.
