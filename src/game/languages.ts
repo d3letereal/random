@@ -329,20 +329,42 @@ export function groupOf(id: string): string | undefined {
 }
 
 // ---------------------------------------------------------------------------
-// Live translation (Google gtx endpoint, MyMemory fallback) with caching
+// Live translation through the project's self-hosted LibreTranslate service
 // ---------------------------------------------------------------------------
+
+const TRANSLATION_API_URL = "https://api.langueguesser.com";
+
+const TRANSLATION_CODE_ALIASES: Record<string, string> = {
+	no: "nb",
+	"zh-CN": "zh-Hans",
+	"zh-TW": "zh-Hant",
+};
+
+// Models currently installed on the low-memory LibreTranslate server.
+const TRANSLATION_CODES = new Set([
+	"sq", "ar", "az", "eu", "bn", "bg", "ca", "zh-Hans", "zh-Hant", "cs",
+	"da", "nl", "eo", "et", "fi", "fr", "gl", "de", "el", "he", "hi", "hr",
+	"hu", "id", "ga", "it", "ja", "ko", "ky", "lv", "lt", "ms", "nb", "fa",
+	"pl", "pt", "pt-BR", "ro", "ru", "sk", "sl", "es", "sw", "sv", "tl",
+	"th", "tr", "uk", "ur", "vi",
+]);
+
+function translationCode(code: string): string {
+	return TRANSLATION_CODE_ALIASES[code] ?? code;
+}
+
+export function supportsLiveTranslation(code?: string): boolean {
+	return code !== undefined && TRANSLATION_CODES.has(translationCode(code));
+}
 
 const translationCache = new Map<string, string>();
 const failedAt = new Map<string, number>(); // negative cache — skip recent failures
 
-async function fetchJson(url: string): Promise<unknown> {
-	const res = await fetch(url, { signal: AbortSignal.timeout(8000) });
-	if (!res.ok) throw new Error(`HTTP ${res.status}`);
-	return res.json();
-}
-
 export async function translateText(text: string, targetCode: string): Promise<string | null> {
-	const key = `${targetCode}:${text}`;
+	const target = translationCode(targetCode);
+	if (!TRANSLATION_CODES.has(target)) return null;
+
+	const key = `${target}:${text}`;
 	const cached = translationCache.get(key);
 	if (cached !== undefined) return cached;
 
@@ -350,51 +372,24 @@ export async function translateText(text: string, targetCode: string): Promise<s
 	const failed = failedAt.get(key);
 	if (failed !== undefined && Date.now() - failed < 30_000) return null;
 
-	const q = encodeURIComponent(text);
-	const c = encodeURIComponent(targetCode);
+	try {
+		const response = await fetch(`${TRANSLATION_API_URL}/translate`, {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({ q: text, source: "en", target, format: "text" }),
+			signal: AbortSignal.timeout(20_000),
+		});
+		if (!response.ok) throw new Error(`LibreTranslate HTTP ${response.status}`);
 
-	// Three independent endpoints — whichever responds wins
-	const attempts: Array<() => Promise<string | null>> = [
-		async () => {
-			// Google gtx
-			const data = (await fetchJson(
-				`https://translate.googleapis.com/translate_a/single?client=gtx&sl=en&tl=${c}&dt=t&q=${q}`,
-			)) as [[[string, string]]];
-			const joined = data?.[0]?.map((seg) => seg?.[0] ?? "").join("") ?? "";
-			return joined.trim() ? joined : null;
-		},
-		async () => {
-			// Google dict-chrome-ex mirror
-			const data = (await fetchJson(
-				`https://clients5.google.com/translate_a/t?client=dict-chrome-ex&sl=en&tl=${c}&q=${q}`,
-			)) as [string];
-			const t = data?.[0];
-			return typeof t === "string" && t.trim() ? t : null;
-		},
-		async () => {
-			// MyMemory fallback
-			const data = (await fetchJson(
-				`https://api.mymemory.translated.net/get?q=${q}&langpair=en|${c}`,
-			)) as { responseData?: { translatedText?: string } };
-			const t = data?.responseData?.translatedText;
-			if (typeof t === "string" && t.trim() && !t.includes("MYMEMORY WARNING") && !t.includes("QUERY LENGTH LIMIT")) {
-				return t;
-			}
-			return null;
-		},
-	];
-
-	for (const attempt of attempts) {
-		try {
-			const result = await attempt();
-			if (result) {
-				failedAt.delete(key);
-				translationCache.set(key, result);
-				return result;
-			}
-		} catch {
-			/* try next endpoint */
+		const data = (await response.json()) as { translatedText?: unknown };
+		const result = typeof data.translatedText === "string" ? data.translatedText.trim() : "";
+		if (result) {
+			failedAt.delete(key);
+			translationCache.set(key, result);
+			return result;
 		}
+	} catch {
+		// The round generator handles a null by trying another language.
 	}
 
 	failedAt.set(key, Date.now());
