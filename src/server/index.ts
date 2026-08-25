@@ -101,6 +101,7 @@ export class Globe extends Server {
 	chatLog: { name: string; text: string }[] = [];
 	lastChatByPlayer = new Map<string, number>();
 	lastActionByPlayer = new Map<string, number>();
+	debugConnections = new Map<string, string>();
 
 	// ------------------------------------------------------------------ util
 
@@ -280,6 +281,11 @@ export class Globe extends Server {
 	// ------------------------------------------------------------- lifecycle
 
 	onConnect(conn: Connection<unknown>, ctx: ConnectionContext) {
+		const debugEmail = ctx.request.headers.get("x-lg-verified-debug-email");
+		if (debugEmail) {
+			this.debugConnections.set(conn.id, debugEmail);
+			this.sendTo(conn, { type: "debug-status", enabled: true, email: debugEmail });
+		}
 		try {
 			const url = new URL(ctx.request.url);
 			const parts = url.pathname.split("/").filter(Boolean);
@@ -386,7 +392,32 @@ export class Globe extends Server {
 				// Intentional exit — remove the seat immediately
 				this.handleLeave(conn);
 				break;
+			case "debug-set-answer":
+				this.handleDebugSetAnswer(conn, msg.playerId, msg.choiceId);
+				break;
+			case "debug-screen-message":
+				this.handleDebugScreenMessage(conn, msg.text);
+				break;
 		}
+	}
+
+	private handleDebugSetAnswer(conn: Connection, targetId: string, choiceId: string | null) {
+		if (!this.debugConnections.has(conn.id) || this.phase !== "guessing") return;
+		const target = this.players.get(String(targetId));
+		if (!target || !this.currentRound) return;
+		const next = choiceId === null ? null : String(choiceId);
+		if (next !== null && !this.currentRound.choices.some((choice) => choice.id === next)) return;
+		target.guess = next;
+		target.guessedAt = next === null ? null : Date.now();
+		this.sync();
+	}
+
+	private handleDebugScreenMessage(conn: Connection, rawText: string) {
+		const email = this.debugConnections.get(conn.id);
+		if (!email) return;
+		const text = String(rawText ?? "").trim().slice(0, 240);
+		if (!text) return;
+		this.broadcast(JSON.stringify({ type: "debug-screen-message", text, from: email } satisfies OutgoingMessage));
 	}
 
 	private handleLeave(conn: Connection) {
@@ -565,11 +596,15 @@ export class Globe extends Server {
 
 		// Fresh guest — enforce host-chosen capacity (host + maxPlayers guests)
 		if (this.players.size >= 1 + this.settings.maxPlayers) {
+			if (this.debugConnections.has(conn.id)) {
+				// A verified preview developer may occupy an extra observer/debug seat.
+			} else {
 			this.sendError(conn, `Room is full (${this.settings.maxPlayers} players max).`);
 			try {
 				conn.close(4004, "full");
 			} catch { /* ignore */ }
 			return;
+			}
 		}
 
 		// De-dupe names
@@ -608,6 +643,7 @@ export class Globe extends Server {
 	}
 
 	private handleDisconnect(conn: Connection) {
+		this.debugConnections.delete(conn.id);
 		const pid = this.connToPlayer.get(conn.id);
 		if (!pid) return;
 		this.connToPlayer.delete(conn.id);
@@ -1019,13 +1055,91 @@ export class RoomDirectory {
 export default {
 	async fetch(request: Request, env: Env): Promise<Response> {
 		const url = new URL(request.url);
+		const debugIdentity = await verifyDebugIdentity(request, env);
+		if (url.pathname === "/api/debug-session" && request.method === "GET") {
+			return Response.json(
+				debugIdentity ? { enabled: true, email: debugIdentity } : { enabled: false },
+				{ status: debugIdentity ? 200 : 404, headers: { "cache-control": "no-store" } },
+			);
+		}
 		if (url.pathname === "/api/rooms" && request.method === "GET") {
 			const stub = env.RoomDirectory.get(env.RoomDirectory.idFromName("global"));
 			return stub.fetch("https://dir/list");
 		}
+		const routedRequest = debugIdentity
+			? new Request(request, { headers: withVerifiedDebugHeader(request.headers, debugIdentity) })
+			: request;
 		return (
-			(await routePartykitRequest(request, { ...env })) ||
+			(await routePartykitRequest(routedRequest, { ...env })) ||
 			new Response("Not Found", { status: 404 })
 		);
 	},
 } satisfies ExportedHandler<Env>;
+
+type DebugEnv = Env & {
+	DEBUG_TOOLS_ENABLED?: string;
+	CF_ACCESS_TEAM_DOMAIN?: string;
+	CF_ACCESS_AUD?: string;
+	CF_ACCESS_ALLOWED_EMAIL?: string;
+};
+
+function withVerifiedDebugHeader(headers: Headers, email: string): Headers {
+	const copy = new Headers(headers);
+	copy.delete("x-lg-verified-debug-email");
+	copy.set("x-lg-verified-debug-email", email);
+	return copy;
+}
+
+function decodeJwtPart(value: string): Record<string, unknown> {
+	const normalized = value.replace(/-/g, "+").replace(/_/g, "/");
+	const padded = normalized.padEnd(Math.ceil(normalized.length / 4) * 4, "=");
+	return JSON.parse(atob(padded)) as Record<string, unknown>;
+}
+
+function decodeJwtBytes(value: string): Uint8Array {
+	const normalized = value.replace(/-/g, "+").replace(/_/g, "/");
+	const raw = atob(normalized.padEnd(Math.ceil(normalized.length / 4) * 4, "="));
+	return Uint8Array.from(raw, (char) => char.charCodeAt(0));
+}
+
+async function verifyDebugIdentity(request: Request, rawEnv: Env): Promise<string | null> {
+	const env = rawEnv as DebugEnv;
+	if (env.DEBUG_TOOLS_ENABLED !== "true") return null;
+	const teamDomain = env.CF_ACCESS_TEAM_DOMAIN?.replace(/\/$/, "");
+	const audience = env.CF_ACCESS_AUD;
+	const allowedEmail = env.CF_ACCESS_ALLOWED_EMAIL?.trim().toLowerCase();
+	const token = request.headers.get("cf-access-jwt-assertion");
+	if (!teamDomain || !audience || !allowedEmail || !token) return null;
+	try {
+		const parts = token.split(".");
+		if (parts.length !== 3) return null;
+		const header = decodeJwtPart(parts[0]);
+		const claims = decodeJwtPart(parts[1]);
+		if (header.alg !== "RS256" || typeof header.kid !== "string") return null;
+		const now = Math.floor(Date.now() / 1000);
+		const audiences = Array.isArray(claims.aud) ? claims.aud : [claims.aud];
+		if (
+			claims.iss !== teamDomain ||
+			!audiences.includes(audience) ||
+			typeof claims.exp !== "number" || claims.exp <= now ||
+			(typeof claims.nbf === "number" && claims.nbf > now) ||
+			typeof claims.email !== "string" || claims.email.toLowerCase() !== allowedEmail
+		) return null;
+		const certs = await fetch(`${teamDomain}/cdn-cgi/access/certs`, {
+			headers: { accept: "application/json" },
+			cf: { cacheTtl: 3600, cacheEverything: true },
+		});
+		if (!certs.ok) return null;
+		const jwks = await certs.json() as { keys?: Array<JsonWebKey & { kid?: string }> };
+		const jwk = jwks.keys?.find((key) => key.kid === header.kid && key.kty === "RSA");
+		if (!jwk) return null;
+		const key = await crypto.subtle.importKey(
+			"jwk", jwk, { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" }, false, ["verify"],
+		);
+		const signed = new TextEncoder().encode(`${parts[0]}.${parts[1]}`);
+		const valid = await crypto.subtle.verify("RSASSA-PKCS1-v1_5", key, decodeJwtBytes(parts[2]), signed);
+		return valid ? claims.email : null;
+	} catch {
+		return null;
+	}
+}
