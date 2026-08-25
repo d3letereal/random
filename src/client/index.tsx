@@ -32,6 +32,42 @@ function secretKey(room: string): string {
 	return `polygloss:secret:${room.toUpperCase()}`;
 }
 
+declare global {
+	interface Window {
+		dev: () => Promise<void>;
+		devinfo: () => void;
+	}
+}
+
+window.dev = async () => {
+	try {
+		const response = await fetch("/api/debug-session", {
+			cache: "no-store",
+		});
+
+		const body = await response.text();
+
+		console.log("DEV STATUS:", response.status);
+		console.log("DEV RESPONSE:", body);
+
+		if (response.ok) {
+			console.log("🧪 Dev mode is ACTIVE");
+		} else {
+			console.log("❌ Dev mode is NOT active");
+		}
+	} catch (error) {
+		console.error("Dev check failed:", error);
+	}
+};
+
+window.devinfo = () => {
+	console.log({
+		hostname: location.hostname,
+		url: location.href,
+		path: location.pathname,
+	});
+};
+
 // ---------------------------------------------------------------------------
 
 const GlyphRain = React.memo(function GlyphRain() {
@@ -949,6 +985,41 @@ function GameScreen({
 		</div>
 	);
 }
+declare global {
+	interface Window {
+		dev: () => Promise<void>;
+		devinfo: () => void;
+	}
+}
+
+window.dev = async () => {
+	try {
+		const response = await fetch("/api/debug-session", {
+			cache: "no-store",
+		});
+
+		const body = await response.text();
+
+		console.log("DEV STATUS:", response.status);
+		console.log("DEV RESPONSE:", body);
+
+		if (response.ok) {
+			console.log("🧪 Dev mode is ACTIVE");
+		} else {
+			console.log("❌ Dev mode is NOT active");
+		}
+	} catch (error) {
+		console.error("Dev check failed:", error);
+	}
+};
+
+window.devinfo = () => {
+	console.log({
+		hostname: location.hostname,
+		url: location.href,
+		path: location.pathname,
+	});
+};
 
 function DebugPanel({
 	state,
