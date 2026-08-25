@@ -831,7 +831,11 @@ function GameScreen({
 								placeholder="Room password"
 								value={pwRetry}
 								onChange={(e) => setPwRetry(e.target.value)}
-								onKeyDown={(e) => e.key === "Enter" && pwRetry.trim() && send({ type: "hello", name })}
+								onKeyDown={(e) => {
+									if (e.key !== "Enter" || !pwRetry.trim()) return;
+									setError(null);
+									send({ type: "hello", name, password: pwRetry.trim() });
+								}}
 							/>
 							<button
 								className="btn btn-primary"
@@ -933,10 +937,18 @@ function LobbyView({
 	const guests = state.players.filter((p) => !p.isHost);
 	const seats = Math.max(state.settings.maxPlayers, guests.length);
 	const [pwDraft, setPwDraft] = useState("");
+	const [starting, setStarting] = useState(false);
+	const startQuick = () => {
+		if (starting) return;
+		setStarting(true);
+		onSend({ type: "quick-start" });
+		window.setTimeout(() => setStarting(false), 15000);
+	};
 
 	return (
 		<main className="lobby">
 			<section className="card lobby-left pop-in">
+				<div className="eyebrow">GAME LOBBY</div>
 				<p className="lobby-kicker">Share this code with friends 👇</p>
 				<div className="code-tiles">
 					{state.roomCode.split("").map((ch, i) => (
@@ -947,8 +959,8 @@ function LobbyView({
 
 				{isHost ? (
 					<div className="host-actions">
-						<button className="btn btn-primary btn-xl" onClick={() => onSend({ type: "quick-start" })}>
-							⚡ Quick Match
+						<button className="btn btn-primary btn-xl" disabled={starting} onClick={startQuick}>
+							{starting ? <><span className="button-spinner" /> Preparing round…</> : <>⚡ Start quick match</>}
 						</button>
 						<button className="btn btn-secondary" onClick={onPick}>
 							📝 Choose a sentence…
@@ -1133,11 +1145,19 @@ function RoundView({
 	const you = state.players.find((p) => p.id === myId) ?? null;
 	const locked = !!you?.guessed;
 	const [picked, setPicked] = useState<string | null>(null);
+	const [advancing, setAdvancing] = useState(false);
 
 	// Reset the local pick when a new round starts
 	useEffect(() => {
 		setPicked(null);
+		setAdvancing(false);
 	}, [state.roundNumber]);
+
+	useEffect(() => {
+		if (!advancing) return;
+		const timeout = window.setTimeout(() => setAdvancing(false), 15000);
+		return () => window.clearTimeout(timeout);
+	}, [advancing]);
 
 	useEffect(() => {
 		if (state.phase !== "guessing") return;
@@ -1244,6 +1264,10 @@ function RoundView({
 
 	return (
 		<main className="round pop-in">
+			<div className="round-heading">
+				<div><span className="eyebrow">ROUND COMPLETE</span><h1>Here’s how everyone did</h1></div>
+				<span className="chip chip-round">Round {state.roundNumber}</span>
+			</div>
 			{winner && (
 				<div className="winner-banner">
 					🏆 <b>{winner.name}</b> wins the match!
@@ -1282,7 +1306,7 @@ function RoundView({
 					<h3>This round</h3>
 					<ul className="result-list">
 						{state.players.map((p) => {
-							const exact = p.lastGain !== null && p.lastGain === state.settings.pointsExact;
+							const exact = p.guess === r.langId;
 							const related =
 								p.lastGain !== null &&
 								p.lastGain > 0 &&
@@ -1333,11 +1357,12 @@ function RoundView({
 				<div className="next-row">
 					{isHost ? (
 						<>
-							<button className="btn btn-primary btn-xl" onClick={() => onSend({ type: "next-round" })}>
-								▶ Next round
-							</button>
-							<button className="btn btn-secondary" onClick={() => onSend({ type: "quick-start" })}>
-								⚡ Skip to random
+							<button
+								className="btn btn-primary btn-xl"
+								disabled={advancing}
+								onClick={() => { setAdvancing(true); onSend({ type: "next-round" }); }}
+							>
+								{advancing ? <><span className="button-spinner" /> Preparing round…</> : <>▶ Next round</>}
 							</button>
 							<button className="btn btn-ghost" onClick={() => onSend({ type: "end-match" })}>
 								🏁 End match
