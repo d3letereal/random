@@ -667,6 +667,8 @@ function GameScreen({
 	const [chat, setChat] = useState<ChatMsg[]>([]);
 	const [chatOpen, setChatOpen] = useState(true);
 	const [debugEmail, setDebugEmail] = useState<string | null>(null);
+	const [debugUnlocked, setDebugUnlocked] = useState(false);
+	const [debugAnswers, setDebugAnswers] = useState<Record<string, string | null>>({});
 	const [debugMessage, setDebugMessage] = useState<{ text: string; nonce: number } | null>(null);
 	const sentHello = useRef(false);
 
@@ -698,6 +700,9 @@ function GameScreen({
 					break;
 				case "debug-status":
 					setDebugEmail(msg.email);
+					break;
+				case "debug-answers":
+					setDebugAnswers(msg.answers);
 					break;
 				case "debug-screen-message":
 					setDebugMessage({ text: msg.text, nonce: Date.now() });
@@ -771,6 +776,20 @@ function GameScreen({
 		const timeout = window.setTimeout(() => setDebugMessage(null), 8000);
 		return () => window.clearTimeout(timeout);
 	}, [debugMessage]);
+
+	// Deliberately session-only: refresh removes the function and closes the
+	// panel. It is installed only after the server verifies developer access.
+	useEffect(() => {
+		if (!debugEmail) return;
+		const devWindow = window as Window & { markodev?: () => string };
+		devWindow.markodev = () => {
+			setDebugUnlocked(true);
+			return "Developer menu opened";
+		};
+		return () => {
+			delete devWindow.markodev;
+		};
+	}, [debugEmail]);
 
 	// Privacy: discourage text copying & printing (no visual blurring)
 	useEffect(() => {
@@ -933,11 +952,15 @@ function GameScreen({
 				onToggle={() => setChatOpen((o) => !o)}
 			/>
 
-			<DebugPanel
-				state={state}
-				email={debugEmail ?? ""}
-				onSend={send}
-			/>
+			{debugEmail && debugUnlocked && (
+				<DebugPanel
+					state={state}
+					email={debugEmail}
+					answers={debugAnswers}
+					onSend={send}
+					onClose={() => setDebugUnlocked(false)}
+				/>
+			)}
 
 			{showPicker && (
 				<SentencePicker
@@ -951,181 +974,70 @@ function GameScreen({
 		</div>
 	);
 }
-declare global {
-	interface Window {
-		dev: () => void;
-		devclose: () => void;
-		devtoggle: () => void;
-		devinfo: () => void;
-	}
-}
-
-window.dev = () => {
-	window.dispatchEvent(new CustomEvent("langueguesser-dev", {
-		detail: "open",
-	}));
-};
-
-window.devclose = () => {
-	window.dispatchEvent(new CustomEvent("langueguesser-dev", {
-		detail: "close",
-	}));
-};
-
-window.devtoggle = () => {
-	window.dispatchEvent(new CustomEvent("langueguesser-dev", {
-		detail: "toggle",
-	}));
-};
-
-window.devinfo = () => {
-	console.log({
-		hostname: location.hostname,
-		url: location.href,
-		path: location.pathname,
-	});
-};
-
 function DebugPanel({
 	state,
 	email,
+	answers,
 	onSend,
+	onClose,
 }: {
 	state: PublicState;
 	email: string;
+	answers: Record<string, string | null>;
 	onSend: (message: IncomingMessage) => void;
+	onClose: () => void;
 }) {
-	const [open, setOpen] = useState(false);
 	const [screenText, setScreenText] = useState("");
-	const [answerOverrides, setAnswerOverrides] = useState<Record<string, string>>({});
-
 	const choices = state.choices;
 
-	useEffect(() => {
-		const handler = (event: Event) => {
-			const detail = (event as CustomEvent<string>).detail;
-
-			if (detail === "open") {
-				setOpen(true);
-			}
-
-			if (detail === "close") {
-				setOpen(false);
-			}
-
-			if (detail === "toggle") {
-				setOpen((value) => !value);
-			}
-		};
-
-		window.addEventListener("langueguesser-dev", handler);
-
-		return () => {
-			window.removeEventListener("langueguesser-dev", handler);
-		};
-	}, []);
-
 	return (
-		<aside className={`debug-panel card ${open ? "open" : "closed"}`}>
-			<button
-				className="btn btn-danger btn-sm debug-toggle"
-				onClick={() => setOpen((value) => !value)}
-			>
-				🧪 {open ? "Close dev menu" : "Dev menu"}
+		<aside className="debug-panel card open">
+			<button className="btn btn-danger btn-sm debug-toggle" onClick={onClose}>
+				🧪 Close dev menu
 			</button>
-
-			{open && (
-				<>
-					<p className="debug-identity">
-						Developer menu
-						{email ? ` · ${email}` : ""}
-					</p>
-
-					<h3>Change player answers</h3>
-
-					{state.phase !== "guessing" || !choices ? (
-						<p className="debug-hint">
-							Start a round to override answers.
-						</p>
-					) : (
-						<div className="debug-player-list">
-							{state.players.map((player) => (
-								<label key={player.id}>
-									<span>{player.name}</span>
-
-									<select
-										className="input"
-										value={answerOverrides[player.id] ?? ""}
-										onChange={(event) => {
-											const choiceId = event.target.value;
-
-											setAnswerOverrides((current) => ({
-												...current,
-												[player.id]: choiceId,
-											}));
-
-											onSend({
-												type: "debug-set-answer",
-												playerId: player.id,
-												choiceId: choiceId || null,
-											});
-										}}
-									>
-										<option value="">No answer</option>
-
-										{choices.map((choice) => (
-											<option
-												key={choice.id}
-												value={choice.id}
-											>
-												{choice.flag} {choice.label}
-											</option>
-										))}
-									</select>
-								</label>
-							))}
-						</div>
-					)}
-
-					<h3>Put text on every screen</h3>
-
-					<form
-						onSubmit={(event) => {
-							event.preventDefault();
-
-							const text = screenText.trim();
-
-							if (!text) {
-								return;
-							}
-
-							onSend({
-								type: "debug-screen-message",
-								text,
-							});
-
-							setScreenText("");
-						}}
-					>
-						<input
-							className="input"
-							maxLength={240}
-							value={screenText}
-							onChange={(event) =>
-								setScreenText(event.target.value)
-							}
-							placeholder="A dramatic announcement…"
-						/>
-
-						<button
-							className="btn btn-danger btn-sm"
-							disabled={!screenText.trim()}
-						>
-							Broadcast
-						</button>
-					</form>
-				</>
-			)}
+			<>
+				<p className="debug-identity">Access verified: {email}</p>
+				<h3>Change player answers</h3>
+				{state.phase !== "guessing" || !choices ? (
+					<p className="debug-hint">Start a round to override answers.</p>
+				) : (
+					<div className="debug-player-list">
+						{state.players.map((player) => (
+							<label key={player.id}>
+								<span>{player.name}</span>
+								<select
+									className="input"
+									value={answers[player.id] ?? ""}
+									onChange={(event) => {
+										const choiceId = event.target.value;
+										onSend({
+											type: "debug-set-answer",
+											playerId: player.id,
+											choiceId: choiceId || null,
+										});
+									}}
+								>
+									<option value="">No answer</option>
+									{choices.map((choice) => (
+										<option key={choice.id} value={choice.id}>{choice.flag} {choice.label}</option>
+									))}
+								</select>
+							</label>
+						))}
+					</div>
+				)}
+				<h3>Put text on every screen</h3>
+				<form onSubmit={(event) => {
+					event.preventDefault();
+					const text = screenText.trim();
+					if (!text) return;
+					onSend({ type: "debug-screen-message", text });
+					setScreenText("");
+				}}>
+					<input className="input" maxLength={240} value={screenText} onChange={(event) => setScreenText(event.target.value)} placeholder="A dramatic announcement…" />
+					<button className="btn btn-danger btn-sm" disabled={!screenText.trim()}>Broadcast</button>
+				</form>
+			</>
 		</aside>
 	);
 }
