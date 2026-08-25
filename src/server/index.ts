@@ -205,6 +205,18 @@ export class Globe extends Server {
 
 		this.broadcast(JSON.stringify({ type: "state", state } satisfies OutgoingMessage));
 
+		// Guesses stay private during play for normal clients. Verified developer
+		// connections get a separate snapshot so their controls always show and
+		// edit the real server-side answers.
+		const answers = Object.fromEntries(
+			[...this.players.values()].map((player) => [player.id, player.guess]),
+		);
+		for (const conn of this.getConnections()) {
+			if (this.debugConnections.has(conn.id)) {
+				this.sendTo(conn, { type: "debug-answers", answers } satisfies OutgoingMessage);
+			}
+		}
+
 		// Keep the public directory in sync for listed rooms
 		const phaseChanged = this.phase !== this.lastPhase;
 		this.lastPhase = this.phase;
@@ -402,11 +414,20 @@ export class Globe extends Server {
 	}
 
 	private handleDebugSetAnswer(conn: Connection, targetId: string, choiceId: string | null) {
-		if (!this.debugConnections.has(conn.id) || this.phase !== "guessing") return;
+		if (!this.debugConnections.has(conn.id) || this.phase !== "guessing") {
+			this.sendError(conn, "Developer answer override is unavailable right now.");
+			return;
+		}
 		const target = this.players.get(String(targetId));
-		if (!target || !this.currentRound) return;
+		if (!target || !this.currentRound) {
+			this.sendError(conn, "That player is no longer in the room.");
+			return;
+		}
 		const next = choiceId === null ? null : String(choiceId);
-		if (next !== null && !this.currentRound.choices.some((choice) => choice.id === next)) return;
+		if (next !== null && !this.currentRound.choices.some((choice) => choice.id === next)) {
+			this.sendError(conn, "That answer is not available this round.");
+			return;
+		}
 		target.guess = next;
 		target.guessedAt = next === null ? null : Date.now();
 		this.sync();

@@ -121,6 +121,7 @@ export type OutgoingMessage =
 	| { type: "error"; message: string }
 	| { type: "chat"; from: string; name: string; text: string }
 	| { type: "debug-status"; enabled: true; email: string }
+	| { type: "debug-answers"; answers: Record<string, string | null> }
 	| { type: "debug-screen-message"; text: string; from: string };
 
 export const POINTS_EXACT = 10;

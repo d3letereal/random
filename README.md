@@ -49,7 +49,7 @@ A live public deployment of this template is available at [https://multiplayer-g
 
 ## Protected preview developer menu
 
-The preview build has an optional server-authorized developer menu. It can join a full lobby, change any player's current answer, and display temporary text on every connected player's screen. The commands are denied by the Durable Object unless the WebSocket upgrade carried a cryptographically verified Cloudflare Access identity.
+The preview build has an optional server-authorized developer menu. It can join a full lobby, change any player's current answer, and display temporary text on every connected player's screen. After joining a room, open the browser console and run `markodev()` to show it. Closing the menu or refreshing hides it, so run the command again when needed. The commands are denied by the Durable Object unless the WebSocket upgrade carried a cryptographically verified Cloudflare Access identity.
 
 ### 1. Put Cloudflare Access in front of the preview URL
 
