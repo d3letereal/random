@@ -32,42 +32,6 @@ function secretKey(room: string): string {
 	return `polygloss:secret:${room.toUpperCase()}`;
 }
 
-declare global {
-	interface Window {
-		dev: () => Promise<void>;
-		devinfo: () => void;
-	}
-}
-
-window.dev = async () => {
-	try {
-		const response = await fetch("/api/debug-session", {
-			cache: "no-store",
-		});
-
-		const body = await response.text();
-
-		console.log("DEV STATUS:", response.status);
-		console.log("DEV RESPONSE:", body);
-
-		if (response.ok) {
-			console.log("🧪 Dev mode is ACTIVE");
-		} else {
-			console.log("❌ Dev mode is NOT active");
-		}
-	} catch (error) {
-		console.error("Dev check failed:", error);
-	}
-};
-
-window.devinfo = () => {
-	console.log({
-		hostname: location.hostname,
-		url: location.href,
-		path: location.pathname,
-	});
-};
-
 // ---------------------------------------------------------------------------
 
 const GlyphRain = React.memo(function GlyphRain() {
@@ -969,9 +933,11 @@ function GameScreen({
 				onToggle={() => setChatOpen((o) => !o)}
 			/>
 
-			{debugEmail && (
-				<DebugPanel state={state} email={debugEmail} onSend={send} />
-			)}
+			<DebugPanel
+				state={state}
+				email={debugEmail ?? ""}
+				onSend={send}
+			/>
 
 			{showPicker && (
 				<SentencePicker
@@ -987,30 +953,29 @@ function GameScreen({
 }
 declare global {
 	interface Window {
-		dev: () => Promise<void>;
+		dev: () => void;
+		devclose: () => void;
+		devtoggle: () => void;
 		devinfo: () => void;
 	}
 }
 
-window.dev = async () => {
-	try {
-		const response = await fetch("/api/debug-session", {
-			cache: "no-store",
-		});
+window.dev = () => {
+	window.dispatchEvent(new CustomEvent("langueguesser-dev", {
+		detail: "open",
+	}));
+};
 
-		const body = await response.text();
+window.devclose = () => {
+	window.dispatchEvent(new CustomEvent("langueguesser-dev", {
+		detail: "close",
+	}));
+};
 
-		console.log("DEV STATUS:", response.status);
-		console.log("DEV RESPONSE:", body);
-
-		if (response.ok) {
-			console.log("🧪 Dev mode is ACTIVE");
-		} else {
-			console.log("❌ Dev mode is NOT active");
-		}
-	} catch (error) {
-		console.error("Dev check failed:", error);
-	}
+window.devtoggle = () => {
+	window.dispatchEvent(new CustomEvent("langueguesser-dev", {
+		detail: "toggle",
+	}));
 };
 
 window.devinfo = () => {
@@ -1033,29 +998,72 @@ function DebugPanel({
 	const [open, setOpen] = useState(false);
 	const [screenText, setScreenText] = useState("");
 	const [answerOverrides, setAnswerOverrides] = useState<Record<string, string>>({});
+
 	const choices = state.choices;
+
+	useEffect(() => {
+		const handler = (event: Event) => {
+			const detail = (event as CustomEvent<string>).detail;
+
+			if (detail === "open") {
+				setOpen(true);
+			}
+
+			if (detail === "close") {
+				setOpen(false);
+			}
+
+			if (detail === "toggle") {
+				setOpen((value) => !value);
+			}
+		};
+
+		window.addEventListener("langueguesser-dev", handler);
+
+		return () => {
+			window.removeEventListener("langueguesser-dev", handler);
+		};
+	}, []);
+
 	return (
 		<aside className={`debug-panel card ${open ? "open" : "closed"}`}>
-			<button className="btn btn-danger btn-sm debug-toggle" onClick={() => setOpen((value) => !value)}>
+			<button
+				className="btn btn-danger btn-sm debug-toggle"
+				onClick={() => setOpen((value) => !value)}
+			>
 				🧪 {open ? "Close dev menu" : "Dev menu"}
 			</button>
+
 			{open && (
 				<>
-					<p className="debug-identity">Access verified: {email}</p>
+					<p className="debug-identity">
+						Developer menu
+						{email ? ` · ${email}` : ""}
+					</p>
+
 					<h3>Change player answers</h3>
+
 					{state.phase !== "guessing" || !choices ? (
-						<p className="debug-hint">Start a round to override answers.</p>
+						<p className="debug-hint">
+							Start a round to override answers.
+						</p>
 					) : (
 						<div className="debug-player-list">
 							{state.players.map((player) => (
 								<label key={player.id}>
 									<span>{player.name}</span>
+
 									<select
 										className="input"
 										value={answerOverrides[player.id] ?? ""}
 										onChange={(event) => {
 											const choiceId = event.target.value;
-											setAnswerOverrides((current) => ({ ...current, [player.id]: choiceId }));
+
+											setAnswerOverrides((current) => ({
+												...current,
+												[player.id]: choiceId,
+											}));
+
 											onSend({
 												type: "debug-set-answer",
 												playerId: player.id,
@@ -1064,24 +1072,57 @@ function DebugPanel({
 										}}
 									>
 										<option value="">No answer</option>
+
 										{choices.map((choice) => (
-											<option key={choice.id} value={choice.id}>{choice.flag} {choice.label}</option>
+											<option
+												key={choice.id}
+												value={choice.id}
+											>
+												{choice.flag} {choice.label}
+											</option>
 										))}
 									</select>
 								</label>
 							))}
 						</div>
 					)}
+
 					<h3>Put text on every screen</h3>
-					<form onSubmit={(event) => {
-						event.preventDefault();
-						const text = screenText.trim();
-						if (!text) return;
-						onSend({ type: "debug-screen-message", text });
-						setScreenText("");
-					}}>
-						<input className="input" maxLength={240} value={screenText} onChange={(event) => setScreenText(event.target.value)} placeholder="A dramatic announcement…" />
-						<button className="btn btn-danger btn-sm" disabled={!screenText.trim()}>Broadcast</button>
+
+					<form
+						onSubmit={(event) => {
+							event.preventDefault();
+
+							const text = screenText.trim();
+
+							if (!text) {
+								return;
+							}
+
+							onSend({
+								type: "debug-screen-message",
+								text,
+							});
+
+							setScreenText("");
+						}}
+					>
+						<input
+							className="input"
+							maxLength={240}
+							value={screenText}
+							onChange={(event) =>
+								setScreenText(event.target.value)
+							}
+							placeholder="A dramatic announcement…"
+						/>
+
+						<button
+							className="btn btn-danger btn-sm"
+							disabled={!screenText.trim()}
+						>
+							Broadcast
+						</button>
 					</form>
 				</>
 			)}
