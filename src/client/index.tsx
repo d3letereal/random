@@ -213,10 +213,12 @@ function Home({
 		<div className="home-wrap">
 			<GlyphRain />
 			<main className="home-card card pop-in">
+				<p className="home-eyebrow"><span /> Multiplayer language party game</p>
 				<Logo />
+				<h1 className="home-title">How well do you<br /><em>read the world?</em></h1>
 				<p className="tagline">
-					The host picks a sentence — it gets translated into a mystery
-					language. Guess it before the timer runs out.
+					Read the mystery translation, race your friends, and name the
+					language before time runs out.
 				</p>
 
 				<label className="field-label" htmlFor="guest-name">Guest name</label>
@@ -231,7 +233,7 @@ function Home({
 				/>
 
 				<button className="btn btn-primary btn-xl" onClick={create}>
-					✨ Create Room
+					<span>✨ Create a room</span><span className="btn-arrow">→</span>
 				</button>
 
 				<div className="divider"><span>or join a friend</span></div>
