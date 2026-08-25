@@ -8,6 +8,7 @@ import {
 	groupOf,
 	langById,
 	obfuscate,
+	supportsLiveTranslation,
 	translateText,
 } from "../game/languages";
 import { SENTENCES } from "../game/sentences";
@@ -104,7 +105,7 @@ export class Globe extends Server {
 
 	private enabledPool(): import("../game/languages").LangDef[] {
 		return ALL_LANGS.filter((l) => {
-			if (l.category === "modern") return true;
+			if (l.category === "modern") return supportsLiveTranslation(l.code);
 			if (l.category === "ancient") return this.settings.includeAncient;
 			if (l.category === "fake") return this.settings.includeFake;
 			return false;
