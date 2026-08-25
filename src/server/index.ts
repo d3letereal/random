@@ -92,6 +92,7 @@ export class Globe extends Server {
 	pendingRemoval = new Map<string, ReturnType<typeof setTimeout>>();
 	private token = 0;
 	private timer: ReturnType<typeof setTimeout> | null = null;
+	private roundStarting = false;
 	private roomCode = "?????";
 	isPublic = false;
 	roomPassword: string | null = null;
@@ -733,6 +734,10 @@ export class Globe extends Server {
 
 	private async startRound(sentenceIndex: number): Promise<void> {
 		if (this.players.size === 0) return;
+		// Translation can take a few seconds. Ignore duplicate button presses instead
+		// of cancelling and restarting the request that is already in flight.
+		if (this.roundStarting) return;
+		this.roundStarting = true;
 		this.clearTimer();
 		const myToken = this.token;
 
@@ -808,7 +813,10 @@ export class Globe extends Server {
 			console.warn(`[polygloss] translation failed for ${lang.id} (attempt ${attempt + 1})`);
 		}
 
-		if (myToken !== this.token) return; // superseded by a newer request
+		if (myToken !== this.token) {
+			this.roundStarting = false;
+			return; // superseded by a newer request
+		}
 
 		// Offline safety net: live translation failed entirely — use an ancient
 		// phrasebook round or a locally generated fake round, else give up.
@@ -835,6 +843,7 @@ export class Globe extends Server {
 		}
 
 		if (!chosenId || translation === null) {
+			this.roundStarting = false;
 			for (const c of this.getConnections()) {
 				if (this.isHostConn(c)) {
 					this.sendError(c, "Translation services are unreachable right now. Try again.");
@@ -867,6 +876,7 @@ export class Globe extends Server {
 			fastestId: null,
 			unanimous: false,
 		};
+		this.roundStarting = false;
 		this.sync();
 
 		this.timer = setTimeout(() => {
