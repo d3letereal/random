@@ -221,47 +221,51 @@ function Home({
 					language before time runs out.
 				</p>
 
-				<label className="field-label" htmlFor="guest-name">Guest name</label>
-				<input
-					id="guest-name"
-					className="input name-input"
-					placeholder="Guest1234"
-					maxLength={16}
-					value={name}
-					onChange={(e) => setName(e.target.value)}
-					onKeyDown={(e) => e.key === "Enter" && create()}
-				/>
-
-				<button className="btn btn-primary btn-xl" onClick={create}>
-					<span>✨ Create a room</span><span className="btn-arrow">→</span>
-				</button>
-
-				<div className="divider"><span>or join a friend</span></div>
-
-				<div className="join-row">
+				<section className="entry-panel">
+					<label className="field-label" htmlFor="guest-name">Your display name</label>
 					<input
-						className="input code-input"
-						placeholder="CODE"
-						maxLength={8}
-						value={joinCode}
-						onChange={(e) => setJoinCode(e.target.value.toUpperCase())}
-						onKeyDown={(e) => e.key === "Enter" && join()}
+						id="guest-name"
+						className="input name-input"
+						placeholder="What should friends call you?"
+						maxLength={16}
+						value={name}
+						onChange={(e) => setName(e.target.value)}
+						onKeyDown={(e) => e.key === "Enter" && create()}
 					/>
-					<button className="btn btn-secondary btn-xl" onClick={join}>
-						Join →
+
+					<button className="btn btn-primary btn-xl" onClick={create}>
+						<span>Create a room</span><span className="btn-arrow">→</span>
 					</button>
-				</div>
+
+					<div className="divider"><span>or enter a room code</span></div>
+
+					<div className="join-row">
+						<input
+							className="input code-input"
+							placeholder="CODE"
+							maxLength={8}
+							value={joinCode}
+							onChange={(e) => setJoinCode(e.target.value.toUpperCase())}
+							onKeyDown={(e) => e.key === "Enter" && join()}
+						/>
+						<button className="btn btn-secondary join-button" onClick={join}>
+							Join room
+						</button>
+					</div>
+				</section>
 
 				{error && <p className="form-error">⚠ {error}</p>}
 
-				<div className="divider"><span>public rooms</span></div>
-				<RoomList
-					nameReady={!!validateGuestName(name) === false && name.trim().length > 0}
-					onJoin={(code, pw) => {
-						if (!checkName()) return;
-						onEnter(name, code, pw);
-					}}
-				/>
+				<section className="server-browser">
+					<div className="server-heading"><span>Public rooms</span><small>Live</small></div>
+					<RoomList
+						nameReady={!!validateGuestName(name) === false && name.trim().length > 0}
+						onJoin={(code, pw) => {
+							if (!checkName()) return;
+							onEnter(name, code, pw);
+						}}
+					/>
+				</section>
 
 				<div className="rules-strip">
 					<span><i>10 pts</i> exact language</span>
@@ -950,14 +954,17 @@ function LobbyView({
 	return (
 		<main className="lobby">
 			<section className="card lobby-left pop-in">
-				<div className="eyebrow">GAME LOBBY</div>
-				<p className="lobby-kicker">Share this code with friends 👇</p>
+				<div className="lobby-intro">
+					<div className="eyebrow"><span className="status-dot" /> ROOM IS OPEN</div>
+					<h1>Bring your friends in</h1>
+					<p className="lobby-kicker">Share the room code to play together</p>
+				</div>
 				<div className="code-tiles">
 					{state.roomCode.split("").map((ch, i) => (
 						<span key={i} className="code-tile">{ch}</span>
 					))}
 				</div>
-				<p className="lobby-sub">Up to {state.settings.maxPlayers} players · everyone guesses, even the host</p>
+				<p className="lobby-sub">{state.players.length} joined · {state.settings.maxPlayers + 1 - state.players.length} seats available</p>
 
 				{isHost ? (
 					<div className="host-actions">
